@@ -1,28 +1,49 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 
+//// Basics: path, route, service
+// path:  /
+// route: GET /
+// service: path + method
 #[get("/")]
-async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
+async fn root_path() -> impl Responder {
+    HttpResponse::Ok().body("root/index path")
 }
 
 #[post("/echo")]
 async fn echo(req_body: String) -> impl Responder {
+    dbg!(&req_body);
     HttpResponse::Ok().body(req_body)
 }
 
-async fn manual_hello() -> impl Responder {
-    HttpResponse::Ok().body("Hey there!")
+async fn manual_hi() -> impl Responder {
+    HttpResponse::Ok().body("Hi there!")
 }
+
+//// 1. GETs
+// curl -s localhost:8080   // !! default is GET
+// root/index path
+
+// curl -s localhost:8080/hi
+// Hi there! 
+
+//// 2. POST
+// curl -s localhost:8080/echo -d "aaa" 
+// aaa
+    // !! -d "this": POST/send this as req body 
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    println!("Server running on localhost:8080 ...");
     HttpServer::new(|| {
         App::new()
-            .service(hello)
+            .service(root_path)
             .service(echo)
-            .route("/hey", web::get().to(manual_hello))
+            .route("/hi", web::get().to(manual_hi))
     })
     .bind(("127.0.0.1", 8080))?
     .run()
-    .await
+    .await?;
+ 
+    println!("Server was shut-down");
+    std::io::Result::Ok(())
 }

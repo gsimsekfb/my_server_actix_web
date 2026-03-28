@@ -50,7 +50,8 @@ async fn my_middleware(
 }
 
 // #[actix_web::main]
+#[allow(dead_code)]
 async fn main_() {
-    let app = App::new().wrap(from_fn(my_middleware));
+    let _app = App::new().wrap(from_fn(my_middleware));
 }
 

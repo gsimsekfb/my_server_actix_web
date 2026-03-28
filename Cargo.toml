@@ -11,3 +11,54 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 serde = "1.0.228"
 serde_json = "1.0.149"
+
+[lints.clippy]
+four_forward_slashes = "allow"
+
+[[bin]]
+name = "main_1_hello"
+path = "src/main_1_hello.rs"
+
+[[bin]]
+name = "main_2_app_state_simple"
+path = "src/main_2_app_state_simple.rs"
+
+[[bin]]
+name = "main_3_app_state_mutable_global"
+path = "src/main_3_app_state_mutable_global.rs"
+
+[[bin]]
+name = "main_4_1_extractors_path"
+path = "src/main_4_1_extractors_path.rs"
+
+[[bin]]
+name = "main_4_2_extractors_query_json_form"
+path = "src/main_4_2_extractors_query_json_form.rs"
+
+[[bin]]
+name = "main_4_3_extractors_app_state"
+path = "src/main_4_3_extractors_app_state.rs"
+
+[[bin]]
+name = "main_5_HttpResponse_Responder_aka_HttpReq_handlers"
+path = "src/main_5_HttpResponse_Responder_aka_HttpReq_handlers.rs"
+
+[[bin]]
+name = "main_x_1_middleware_basics"
+path = "src/main_x_1_middleware_basics.rs"
+
+[[bin]]
+name = "main_x_logging_middleware"
+path = "src/main_x_logging_middleware.rs"
+
+[[bin]]
+name = "main_x_default_headers_middleware"
+path = "src/main_x_default_headers_middleware.rs"
+
+[[bin]]
+name = "main_x_cookies__user_sessions_middleware"
+path = "src/main_x_cookies__user_sessions_middleware.rs"
+
+[[bin]]
+name = "main_x_Error_Handlers_middleware"
+path = "src/main_x_Error_Handlers_middleware.rs"
