@@ -1,3 +1,4 @@
+![Clippy](https://github.com/gsimsekfb/my_server_actix_web/actions/workflows/clippy.yml/badge.svg)
 
 Each main shows a fundamental architecture or some basic concepts.
 
