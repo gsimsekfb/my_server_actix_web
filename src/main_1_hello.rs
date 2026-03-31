@@ -1,12 +1,13 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 
-//// Basics: path, route, service
+//// Basics: path, route, service, handler
 // path:  /
 // route: GET /
 // service: path + method
+// handler: this fn
 #[get("/")]
 async fn root_path() -> impl Responder {
-    HttpResponse::Ok().body("root/index path")
+    HttpResponse::Ok().body("hi from root/index path")
 }
 
 #[post("/echo")]
@@ -19,9 +20,10 @@ async fn manual_hi() -> impl Responder {
     HttpResponse::Ok().body("Hi there!")
 }
 
+// --------------------------------------------------------
 //// 1. GETs
 // curl -s localhost:8080   // !! default is GET
-// root/index path
+// hi from root/index path
 
 // curl -s localhost:8080/hi
 // Hi there! 
@@ -30,10 +32,12 @@ async fn manual_hi() -> impl Responder {
 // curl -s localhost:8080/echo -d "aaa" 
 // aaa
     // !! -d "this": POST/send this as req body 
+// --------------------------------------------------------
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     println!("Server running on localhost:8080 ...");
+
     HttpServer::new(|| {
         App::new()
             .service(root_path)

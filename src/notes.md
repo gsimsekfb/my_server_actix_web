@@ -1,16 +1,10 @@
 
+Each main shows a fundamental architecture or some basic concepts.
 
-1. Where is returning `HttpResponse` or `impl Responder` ? 
-```rust
-#[get("/")]
-async fn index(data: web::Data<AppState>) -> String {
-    let app_name = &data.app_name;
-    format!("Hello {app_name}!")
-}
+How to run each main:
 ```
-Actix has a blanket implementation: any type that implements Responder can be returned directly.
-
-
-
-
-
+cargo r --bin main_1
+cargo r --bin main_4_3
+...
+see more in Cargo.toml
+```

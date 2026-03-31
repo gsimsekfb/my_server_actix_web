@@ -16,31 +16,31 @@ serde_json = "1.0.149"
 four_forward_slashes = "allow"
 
 [[bin]]
-name = "main_1_hello"
+name = "main_1"
 path = "src/main_1_hello.rs"
 
 [[bin]]
-name = "main_2_app_state_simple"
+name = "main_2"
 path = "src/main_2_app_state_simple.rs"
 
 [[bin]]
-name = "main_3_app_state_mutable_global"
+name = "main_3"
 path = "src/main_3_app_state_mutable_global.rs"
 
 [[bin]]
-name = "main_4_1_extractors_path"
+name = "main_4_1"
 path = "src/main_4_1_extractors_path.rs"
 
 [[bin]]
-name = "main_4_2_extractors_query_json_form"
+name = "main_4_2"
 path = "src/main_4_2_extractors_query_json_form.rs"
 
 [[bin]]
-name = "main_4_3_extractors_app_state"
+name = "main_4_3"
 path = "src/main_4_3_extractors_app_state.rs"
 
 [[bin]]
-name = "main_5_HttpResponse_Responder_aka_HttpReq_handlers"
+name = "main_5"
 path = "src/main_5_HttpResponse_Responder_aka_HttpReq_handlers.rs"
 
 [[bin]]
