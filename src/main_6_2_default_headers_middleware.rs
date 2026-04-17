@@ -2,6 +2,15 @@ use actix_web::{get, App, HttpResponse, HttpServer, Responder};
 // Default headers middleware:
 use actix_web::middleware::DefaultHeaders;
 
+
+//// Topics
+// - Default headers middleware
+// In production, DefaultHeaders is used mostly for security headers 
+//
+// Security headers     → protect every response (most common use)
+// Metadata headers     → versioning, tracing, environment info
+
+
 #[get("/")]
 async fn hello() -> impl Responder {
     HttpResponse::Ok().body("Hello world!")

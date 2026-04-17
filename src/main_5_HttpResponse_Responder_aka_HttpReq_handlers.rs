@@ -2,9 +2,21 @@ use actix_web::body::BoxBody;
 use actix_web::{App, Either, Error, HttpRequest, HttpResponse, HttpServer, Responder, get, http, web};
 use futures::StreamExt;
 
+//// Topics:
+// 1. "Responder" trait (impl.ed by types that can be converted to an HTTP 
+//     response). 
+//   a) auto impl. case
+//   b) manual impl. for custom types
+//
+// 2. Handler returning stream (e.g. big data: chunk_1, chunk_2, etc.. )
+// 3. Different return types (Either) - rarely used ?
+//    e.g. Either<HttpResponse, Result<&'static str, actix_web::Error>>;
+//
 // Src:
 // https://actix.rs/docs/handlers/
 
+
+/// 1.
 
 // 1-a. Actix Web provides Responder impls for some types:
 // By default Actix Web provides Responder implementations for some standard 
@@ -44,9 +56,11 @@ struct MyObj {
 impl Responder for MyObj {
     type Body = BoxBody;
 
-    fn respond_to(self, _req: &actix_web::HttpRequest) -> HttpResponse<Self::Body> {
+    fn respond_to(
+        self, 
+        _req: &actix_web::HttpRequest
+    ) -> HttpResponse<Self::Body> {
         let body = serde_json::to_string(&self).unwrap();
-
         // Create response and set content type
         HttpResponse::Ok()
             .content_type(http::header::ContentType::json())
@@ -59,7 +73,7 @@ async fn my_obj() -> impl Responder { MyObj { name: "myobj-1" } }
 
 
 
-// 2. Streaming response body
+//// 2. Streaming response body
 
 #[get("/stream")]
 async fn stream() -> HttpResponse {
@@ -76,7 +90,7 @@ async fn stream() -> HttpResponse {
 
 
 
-// 3. Different return types (Either)
+//// 3. Different return types (Either) - probably rare in production
 
 use serde::Deserialize;
 

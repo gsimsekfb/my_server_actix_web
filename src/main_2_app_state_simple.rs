@@ -1,8 +1,8 @@
 use actix_web::{get, web, App, HttpServer};
 
-// Topics:
+//// Topics:
 // Threads, tasks
-// State that is local per worker thread
+// Local/per worker thread state
 
 struct AppState {
     app_name: String,

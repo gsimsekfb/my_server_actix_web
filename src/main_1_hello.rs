@@ -1,9 +1,15 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 
+
+//// Topics:
+// Basics: path, route, service, handler
+// get/post handlers
+
+
 //// Basics: path, route, service, handler
 // path:  /
 // route: GET /
-// service: path + method
+// service: route + handler
 // handler: this fn
 #[get("/")]
 async fn root_path() -> impl Responder {

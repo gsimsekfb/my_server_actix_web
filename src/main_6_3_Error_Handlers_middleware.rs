@@ -5,7 +5,10 @@ use actix_web::{
     web, App, HttpResponse, HttpServer, Result,
 };
 
-// Middleware: Error Handlers
+//// Topic
+// Error Handler Middleware:
+// how to intercept specific HTTP error responses (like 500) and modify them 
+// before they reach the client.
 
 // Src:
 // https://actix.rs/docs/middleware#error-handlers
@@ -36,14 +39,15 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
-// curl -i "localhost:8080"
-    // HTTP/1.1 500 Internal Server Error
-    // content-length: 0
-    // content-type: Error
-    // date: Fri, 13 Feb 2026 13:00:32 GMT
+// ** w Error handler middleware:
+    // curl -i "localhost:8080"
+        // HTTP/1.1 500 Internal Server Error
+        // content-length: 0
+        // content-type: Error   // <-- added by mw
+        // date: Fri, 13 Feb 2026 13:00:32 GMT
 
 // ** w/o Error handler middleware:
-// curl -i "localhost:8080"
-    // HTTP/1.1 500 Internal Server Error
-    // content-length: 0
-    // date: Fri, 13 Feb 2026 13:01:10 GMT
+    // curl -i "localhost:8080"
+        // HTTP/1.1 500 Internal Server Error
+        // content-length: 0
+        // date: Fri, 13 Feb 2026 13:01:10 GMT

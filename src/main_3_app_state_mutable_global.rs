@@ -5,13 +5,13 @@ use std::sync::Mutex;
 // Threads, tasks
 // State that is globally shared
 
-struct AppStateWithCounter {
+struct AppState {
     counter: Mutex<i32>, // Mutex is necessary to mutate safely across threads
         // Arc will come from web::Data, see below
 }
 
 // This handler runs per request, as a tokio task on one of the worker threads
-async fn index(data: web::Data<AppStateWithCounter>) -> String {
+async fn index(data: web::Data<AppState>) -> String {
     println!("-- thread: {:?}", std::thread::current().id());
 
     let mut counter = data.counter.lock().unwrap(); // get counter's MutexGuard
@@ -30,7 +30,7 @@ async fn main() -> std::io::Result<()> {
     // - web::Data<T> is struct Data<T>(Arc<T>) — so the pointer is 
     // shared safely across threads
     let counter = web::Data::new(
-        AppStateWithCounter { counter: Mutex::new(0) }
+        AppState { counter: Mutex::new(0) }
     );
 
     // closure will be run per worker thread (at startup), default workers: 8
