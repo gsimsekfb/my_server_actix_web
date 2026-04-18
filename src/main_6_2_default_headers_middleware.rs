@@ -20,7 +20,7 @@ async fn hello() -> impl Responder {
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
-            // Added to ALL responses
+            // ** Added to ALL responses
             .wrap(DefaultHeaders::new().add(("App-Version", "1.1")))
             .service(hello)
     })

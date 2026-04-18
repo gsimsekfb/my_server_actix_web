@@ -6,14 +6,25 @@ edition = "2024"
 [dependencies]
 actix-session = { version = "0.11", features = ["cookie-session"] }
 actix-web = "4"
+derive_more = "2.1.1"
 env_logger = "0.11.9"
 futures = "0.3.31"
 futures-util = "0.3.31"
+log = "0.4.29"
 serde = "1.0.228"
 serde_json = "1.0.149"
+tokio = "1.52.1"
 
 [lints.clippy]
 four_forward_slashes = "allow"
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "main_0"
+path = "src/main_0_hello_template.rs"
 
 [[bin]]
 name = "main_1"
@@ -62,3 +73,11 @@ path = "src/main_6_4_logging_middleware.rs"
 [[bin]]
 name = "main_6_5"
 path = "src/main_6_5_user_sessions_middleware.rs"
+
+[[bin]]
+name = "main_7"
+path = "src/main_7_Errors.rs"
+
+[[bin]]
+name = "main_7_1"
+path = "src/main_7_1_Error_Logging.rs"

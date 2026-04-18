@@ -26,7 +26,7 @@ fn add_error_header<B>(mut res: dev::ServiceResponse<B>) -> Result<ErrorHandlerR
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
-            .wrap( // Intercept any 500 response and modify it
+            .wrap( // ** Intercept any 500 response and modify it
                 ErrorHandlers::new()
                     .handler(StatusCode::INTERNAL_SERVER_ERROR, add_error_header),
             )
