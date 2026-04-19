@@ -81,3 +81,7 @@ path = "src/main_7_Errors.rs"
 [[bin]]
 name = "main_7_1"
 path = "src/main_7_1_Error_Logging.rs"
+
+[[bin]]
+name = "twin"
+path = "src/tw_assignment.rs"

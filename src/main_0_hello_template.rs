@@ -27,6 +27,8 @@ async fn main() -> std::io::Result<()> {
 
     let handle = server.handle();
 
+    // Timed Server:
+    // Note: Comment out this to disable this feature and tokio
     // Spawn shutdown task
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;

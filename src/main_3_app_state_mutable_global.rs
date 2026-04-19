@@ -29,15 +29,15 @@ async fn main() -> std::io::Result<()> {
     // which makes it global shared state
     // - web::Data<T> is struct Data<T>(Arc<T>) — so the pointer is 
     // shared safely across threads
-    let counter = web::Data::new(
+    let app_state = web::Data::new(
         AppState { counter: Mutex::new(0) }
     );
 
     // closure will be run per worker thread (at startup), default workers: 8
-    HttpServer::new(move || { // move counter into the closure
+    HttpServer::new(move || { // move app_state into the closure
         App::new()
             // clone for each worker thread
-            .app_data(counter.clone()) // register the created data
+            .app_data(app_state.clone()) // register the created data
             .route("/", web::get().to(index))
     })
     .bind(("127.0.0.1", 8080))?
