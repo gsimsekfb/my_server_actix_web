@@ -75,8 +75,8 @@ name = "main_6_5"
 path = "src/main_6_5_user_sessions_middleware.rs"
 
 [[bin]]
-name = "main_7"
-path = "src/main_7_Errors.rs"
+name = "main_7_0"
+path = "src/main_7_0_Errors.rs"
 
 [[bin]]
 name = "main_7_1"
