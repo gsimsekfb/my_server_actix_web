@@ -76,15 +76,15 @@ async fn buy(state: web::Data<AppState>, req: web::Json<BuyRequest>) -> impl Res
     if state.supply > 0  {
         // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
         if state.supply >= buy_value {
-            // todo: update or push
-            state.allocations.insert(user.clone(), buy_value);
+            let &alloc = state.allocations.get(&user).unwrap_or(&0);
+            state.allocations.insert(user.clone(), alloc + buy_value);
             state.supply -= buy_value;
         // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         } else {  // partial fill: store unfilled as bid
             let state_supply = state.supply;
-            state.allocations.insert(user.clone(), state_supply);
+            let &alloc = state.allocations.get(&user).unwrap_or(&0);
+            state.allocations.insert(user.clone(), alloc + state_supply);
             let seq = state.request_no;
-            // todo: update or push
             state.bids.push(
                 Bid::new(user, (buy_value - state_supply) / price, price, seq)
             );
@@ -119,9 +119,6 @@ async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl R
     }
     
     //// allocate outstanding bids
-    // find bids_to_process
-
-    // allocate bids_to_process
     let mut state = state.inner.lock().unwrap();
     for i in (0..state.bids.len()).rev() {
         let user = state.bids[i].user.clone();
@@ -129,13 +126,15 @@ async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl R
         let bid_price = state.bids[i].price;
         // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
         if state.supply >= bid_value {
-            state.allocations.insert(user.clone(), bid_value);
+            let &alloc = state.allocations.get(&user).unwrap_or(&0);
+            state.allocations.insert(user.clone(), alloc + bid_value);
             state.supply -= bid_value;
             state.bids.remove(i);
         // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         } else {
             let state_supply = state.supply;
-            state.allocations.insert(user, state_supply);
+            let &alloc = state.allocations.get(&user).unwrap_or(&0);
+            state.allocations.insert(user, alloc + state_supply);
             state.bids[i].volume = (bid_value - state_supply) / bid_price;
             state.supply = 0;
         }
