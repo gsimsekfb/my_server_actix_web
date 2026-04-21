@@ -1,5 +1,6 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
+#![allow(unused_imports)]
 
 use actix_web::{
     App, Error, HttpServer, Responder, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, 
@@ -60,23 +61,41 @@ curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d
 /// Behavior: register bid; immediately allocate if leftover supply is available.
 /// 3. Buy request comes, sell immediately if there is unused supply otherwise
 ///    store incoming buys as "bids" in memory (possibly sorted by price).
-///    - Same price buy requests, first requests buys.
+/// Allocation rules
+/// + Highest price wins.
+/// + FIFO inside a price level (earlier bids at the same price fill first).
+/// + Partial fills allowed; unfilled remainder stays open.
+/// + Unused supply persists and must auto-match any subsequent bids arriving later.
 #[post("/buy")]
 async fn buy(state: web::Data<AppState>, req: web::Json<BuyRequest>) -> impl Responder {
     let mut state = state.inner.lock().unwrap();
     let BuyRequest {user, volume, price} = req.into_inner();
 
-    // sell immediately if there is unused supply
+    //// sell immediately if there is unused supply
     let buy_value = price * volume;
-    if state.supply > buy_value  {
-        state.allocations.insert(user.clone(), buy_value);
-        state.supply -= buy_value;
+    if state.supply > 0  {
+        // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
+        if state.supply >= buy_value {
+            // todo: update or push
+            state.allocations.insert(user.clone(), buy_value);
+            state.supply -= buy_value;
+        // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
+        } else {  // partial fill: store unfilled as bid
+            let state_supply = state.supply;
+            state.allocations.insert(user.clone(), state_supply);
+            let seq = state.request_no;
+            // todo: update or push
+            state.bids.push(
+                Bid::new(user, (buy_value - state_supply) / price, price, seq)
+            );
+            state.supply = 0;
+        }
     }
-    // otherwise, store req into bids
+    //// otherwise, store req into bids
     else {
         let seq = state.request_no;
         state.bids.push(Bid::new(user, volume, price, seq));
-        state.bids.sort_by(|a, b| a.price.cmp(&b.price));
+        state.bids.sort_by(|a, b| a.price.cmp(&b.price).then(b.seq.cmp(&a.seq)));
     }
 
     format!("\nstate: {state:#?}\n ")
@@ -101,41 +120,36 @@ async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl R
     
     //// allocate outstanding bids
     // find bids_to_process
-    let state_ = state.inner.lock().unwrap();
-    let bids = &state_.bids;
-    let mut supply = state_.supply;
-    let bids_to_process: Vec<usize> = state_.bids
-        .iter()
-        .enumerate()
-        .rev()
-        .inspect(|b| println!("{b:?}"))
-        .filter(|(i, bid)| { 
-            let buy_val = bid.price * bid.volume;
-            if buy_val <= supply { supply -= buy_val; return true }
-            false
-        })
-        .map(|(i, _)| i)
-        .collect();
-    drop(state_);
 
-    dbg!(&bids_to_process);
-    dbg!(supply);
-
-    // allocated bids_to_process
+    // allocate bids_to_process
     let mut state = state.inner.lock().unwrap();
-    bids_to_process.iter().for_each(|&i| {
+    for i in (0..state.bids.len()).rev() {
         let user = state.bids[i].user.clone();
         let bid_value = state.bids[i].price * state.bids[i].volume;
-        state.allocations.insert(user, bid_value);
-        state.supply -= bid_value;
-        state.bids.remove(i);
-    });
+        let bid_price = state.bids[i].price;
+        // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
+        if state.supply >= bid_value {
+            state.allocations.insert(user.clone(), bid_value);
+            state.supply -= bid_value;
+            state.bids.remove(i);
+        // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
+        } else {
+            let state_supply = state.supply;
+            state.allocations.insert(user, state_supply);
+            state.bids[i].volume = (bid_value - state_supply) / bid_price;
+            state.supply = 0;
+        }
+    };
+
+    let total_alloc: u64 = state.allocations.values().sum();
+    dbg!(total_alloc);
 
     format!("\nstate: {state:#?}\n ")
 }
 
 /// Behavior: return the integer total VM-hours allocated to u1 so far.
-/// Responses: 200 OK with body like 150, or appropriate 4xx on error (e.g., missing username).
+/// Responses: 200 OK with body like 150, or appropriate 4xx on error 
+/// (e.g., missing username).
 /*
 curl -s localhost:8080/allocation?username=u1
 */
