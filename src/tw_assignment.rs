@@ -78,18 +78,20 @@ curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d
 async fn buy(
     state: web::Data<AppState>, req: web::Json<BuyRequest>
 ) -> impl Responder {
-    let state = buy_impl(state, req.0);
-    let state = state.inner.lock().unwrap();
-    format!("\nstate: {state:#?}\n ")
+    let mut state_ = state.inner.lock().unwrap();
+    buy_impl(&mut state_, req.0);
+
+    let state_ = state.inner.lock().unwrap();
+    format!("\nstate: {state_:#?}\n ")
 
     // format!("{}: {alloc:?}\n", &user) + 
     //     &format!("state: {state:#?}\n ")
 }
 
 fn buy_impl(
-    state_: web::Data<AppState>, buy_req: BuyRequest
-) -> web::Data<AppState> {
-    let mut state = state_.inner.lock().unwrap();
+    state: &mut AppStateImpl,
+    buy_req: BuyRequest
+) {
     let BuyRequest {user, volume, price} = buy_req;
 
     // 0. Increment request_no
@@ -124,9 +126,6 @@ fn buy_impl(
         state.bids.push(Bid::new(user, volume, price, seq));
         state.bids.sort_by(|a, b| a.price.cmp(&b.price).then(b.seq.cmp(&a.seq)));
     }
-    drop(state);
-
-    state_
 }
 
 /// Behavior: add supply and allocate to outstanding bids
@@ -178,7 +177,7 @@ async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl R
 curl -s localhost:8080/allocation?username=u1
 */
 fn allocation_impl(
-    state: MutexGuard<'_, AppStateImpl>, 
+    state: &AppStateImpl, 
     req: AllocationQuery
 ) -> Result<u64> {
     // todo: refactor
@@ -195,7 +194,7 @@ async fn allocation(
     req: web::Query<AllocationQuery>
 ) -> Result<String> {
     let state_ = state.inner.lock().unwrap();
-    let res = allocation_impl(state_, req.0.clone());
+    let res = allocation_impl(&state_, req.0.clone());
 
     let state_ = state.inner.lock().unwrap();
     if let Ok(alloc) = res {
@@ -272,24 +271,20 @@ mod tests {
     
     #[test]
     fn allocation() {
-        let state = web::Data::new( AppState {
-            inner: Mutex::new(AppStateImpl { 
-                allocations: HashMap::from( [("u1".to_string(), 100)] ), 
-                ..Default::default()
-            })
-        });
+        let state = AppStateImpl { 
+            allocations: HashMap::from( [("u1".to_string(), 100)] ), 
+            ..Default::default()
+        };
 
         // - good case
-        let state_ = state.inner.lock().unwrap();
         let result = allocation_impl(
-            state_, AllocationQuery { username: "u1".to_string() }
+            &state, AllocationQuery { username: "u1".to_string() }
         ).unwrap();
         assert_eq!(result, 100);
 
         // - error case
-        let state_ = state.inner.lock().unwrap();
         let result = allocation_impl(
-            state_, AllocationQuery { username: "u2".to_string() }
+            &state, AllocationQuery { username: "u2".to_string() }
         );
         let status = result.as_ref().unwrap_err().error_response().status();
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -306,23 +301,17 @@ mod tests {
     fn buy() {
         //// 1. sell immediately if there is unused supply
         // full fill
-        let state = web::Data::new( AppState {
-            inner: Mutex::new(AppStateImpl { supply: 200, ..Default::default() })
-        });
+        let mut state = AppStateImpl { supply: 200, ..Default::default() };
         let buy_req = BuyRequest::new("u1", 100, 2);
-        let state = buy_impl(state, buy_req);
-        let state = state.inner.lock().unwrap();
+        buy_impl(&mut state, buy_req);
         assert_eq!(state.request_no, 1);
         assert_eq!(state.allocations.get("u1").unwrap(), &200);
         assert_eq!(state.supply, 0);
 
         // partial fill
-        let state = web::Data::new( AppState {
-            inner: Mutex::new(AppStateImpl { supply: 50, ..Default::default() })
-        });
+        let mut state = AppStateImpl { supply: 50, ..Default::default() };
         let buy_req = BuyRequest::new("u1", 100, 2);
-        let state = buy_impl(state, buy_req);
-        let state = state.inner.lock().unwrap();
+        buy_impl(&mut state, buy_req);
         assert_eq!(state.request_no, 1);
         assert_eq!(state.supply, 0);
         assert_eq!(state.allocations.get("u1").unwrap(), &50);
@@ -332,41 +321,29 @@ mod tests {
         assert_eq!(state.bids[0].seq, 1);
 
         //// 2. otherwise, store req into bids
-        let state = web::Data::new( AppState::default() );
+        let mut state = AppStateImpl::default();
 
         // case: basic first bid 
-        let buy_req = BuyRequest::new("u1", 100, 2);
-        let state = buy_impl(state, buy_req);
-        {   
-            let state_ = state.inner.lock().unwrap();
-            assert_eq!(state_.request_no, 1);
-            assert_eq!(state_.bids.len(), 1);
-            assert_eq!(state_.bids[0].volume, 100);
-            assert_eq!(state_.bids[0].price, 2);
-            assert_eq!(state_.bids[0].seq, 1);
-        }    
+        buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
+        assert_eq!(state.request_no, 1);
+        assert_eq!(state.bids.len(), 1);
+        assert_eq!(state.bids[0].volume, 100);
+        assert_eq!(state.bids[0].price, 2);
+        assert_eq!(state.bids[0].seq, 1);
         // case: earlier bids at the same price fill first
-        let buy_req = BuyRequest::new("u2", 100, 2);
-        let state = buy_impl(state, buy_req);
-        {
-            let state_ = state.inner.lock().unwrap();
-            assert_eq!(state_.request_no, 2);
-            assert_eq!(state_.bids.len(), 2);
-            assert_eq!(state_.bids[0].volume, 100);
-            assert_eq!(state_.bids[0].price, 2);
-            assert_eq!(state_.bids[0].seq, 2);
-            assert_eq!(state_.bids[1].user, "u1");  // u1 bid first
-            assert_eq!(state_.bids[1].seq, 1);
-        }
+        buy_impl(&mut state, BuyRequest::new("u2", 100, 2));
+        assert_eq!(state.request_no, 2);
+        assert_eq!(state.bids.len(), 2);
+        assert_eq!(state.bids[0].volume, 100);
+        assert_eq!(state.bids[0].price, 2);
+        assert_eq!(state.bids[0].seq, 2);
+        assert_eq!(state.bids[1].user, "u1");  // u1 bid first
+        assert_eq!(state.bids[1].seq, 1);
         // case: highest price always wins
-        let buy_req = BuyRequest::new("u3", 100, 3);
-        let state = buy_impl(state, buy_req);
-        {
-            let state_ = state.inner.lock().unwrap();
-            assert_eq!(state_.request_no, 3);
-            assert_eq!(state_.bids.len(), 3);
-            assert_eq!(state_.bids.last().unwrap().user, "u3");
-        }
+        buy_impl(&mut state, BuyRequest::new("u3", 100, 3));
+        assert_eq!(state.request_no, 3);
+        assert_eq!(state.bids.len(), 3);
+        assert_eq!(state.bids.last().unwrap().user, "u3");
     }
 }
 
