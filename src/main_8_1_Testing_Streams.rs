@@ -2,6 +2,7 @@
 #![allow(non_camel_case_types)]
 #![allow(unused_variables)]
 #![allow(unused)]
+#![allow(clippy::items_after_test_module)]
 
 use std::task::Poll;
 
@@ -117,6 +118,7 @@ mod tests {
     }
 }
 
+fn main(){}
 //// Not needed, could be used for debugging
 //
 // #[actix_web::main]

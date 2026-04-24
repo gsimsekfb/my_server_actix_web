@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 #![allow(unused_variables)]
+#![allow(clippy::items_after_test_module)]
 
 use actix_web::{HttpResponse, Responder, get, web};
 use std::sync::Mutex;
@@ -119,6 +120,8 @@ mod tests {
     }
 }
 
+
+fn main(){}
 //// Not needed, use for debugging
 /* 
 #[actix_web::main]
