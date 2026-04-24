@@ -20,4 +20,6 @@ mod main_6_3_Error_Handlers_middleware;
 mod main_6_1_middleware_basics;
 mod main_7_0_Errors;
 mod main_7_1_Error_Logging;
+mod main_8_0_Testing;
+mod main_8_1_Testing_Streams;
 mod tw_assignment;

@@ -1,6 +1,5 @@
 use actix_web::{get, App, HttpResponse, HttpServer, Responder};
 
-
 #[get("/")]
 async fn index() -> impl Responder {
     HttpResponse::Ok().body("hi from root/index path")

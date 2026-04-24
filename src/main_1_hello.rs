@@ -11,6 +11,7 @@ use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 // route: GET /
 // service: route + handler
 // handler: this fn
+// !! Note that adding routing macro (e.g. get) will convert this fn to struct 
 #[get("/")]
 async fn root_path() -> impl Responder {
     HttpResponse::Ok().body("hi from root/index path")

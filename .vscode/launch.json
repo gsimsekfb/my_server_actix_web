@@ -26,5 +26,16 @@
             // "env":{"NODE_ENV": "test"},
             "cwd": "${workspaceFolder}"
         },
+        {
+            "name": "test main",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": ["t", "--bin", "main"],
+            },
+            "args": [],
+            // "env":{"NODE_ENV": "test"},
+            "cwd": "${workspaceFolder}"
+        },
     ]
 }

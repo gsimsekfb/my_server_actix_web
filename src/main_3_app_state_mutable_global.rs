@@ -29,9 +29,7 @@ async fn main() -> std::io::Result<()> {
     // which makes it global shared state
     // - web::Data<T> is struct Data<T>(Arc<T>) — so the pointer is 
     // shared safely across threads
-    let app_state = web::Data::new(
-        AppState { counter: Mutex::new(0) }
-    );
+    let app_state = web::Data::new(AppState { counter: Mutex::new(0) });
 
     // closure will be run per worker thread (at startup), default workers: 8
     HttpServer::new(move || { // move app_state into the closure
