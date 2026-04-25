@@ -134,16 +134,11 @@ fn buy_impl(
 /* 
 curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"volume\":500}"
 */
-#[post("/sell")]
-async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl Responder {
+fn sell_impl(state: &mut AppStateImpl, sell_req: SellRequest) {
     //// add incoming sell into supply
-    {
-        let mut state = state.inner.lock().unwrap();
-        state.supply += req.volume;
-    }
+    state.supply += sell_req.volume;
     
     //// allocate outstanding bids
-    let mut state = state.inner.lock().unwrap();
     for i in (0..state.bids.len()).rev() {
         let user = state.bids[i].user.clone();
         let bid_value = state.bids[i].price * state.bids[i].volume;
@@ -166,6 +161,12 @@ async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl R
 
     let total_alloc: u64 = state.allocations.values().sum();
     dbg!(total_alloc);
+}
+
+#[post("/sell")]
+async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl Responder {
+    let mut state = state.inner.lock().unwrap();
+    sell_impl(&mut state, req.0);
 
     format!("\nstate: {state:#?}\n ")
 }
@@ -294,7 +295,33 @@ mod tests {
 
     #[test]
     fn sell() {
-        // todo
+        // 1. add incoming sell into supply
+        let mut state = AppStateImpl::default();
+        assert_eq!(state.supply, 0);
+        sell_impl(&mut state, SellRequest { volume: 400 });
+        assert_eq!(state.supply, 400);
+    
+        // 2. allocate outstanding bids
+        // case: full fill - state.supply = 60, buy: 50 => supply: 10, bid: 50
+        let mut state = AppStateImpl { 
+            bids: vec![ Bid::new("u1".to_string(), 100, 2, 1) ],
+            ..Default::default()
+        };
+        sell_impl(&mut state, SellRequest { volume: 300 });
+        assert_eq!(state.allocations.get("u1").unwrap(), &200);
+        assert_eq!(state.supply, 100);
+        assert!(state.bids.is_empty());
+        // case: partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
+        let mut state = AppStateImpl { 
+            bids: vec![ Bid::new("u1".to_string(), 100, 2, 1) ],
+            ..Default::default()
+        };
+        sell_impl(&mut state, SellRequest { volume: 50 });
+        assert_eq!(state.allocations.get("u1").unwrap(), &50);
+        assert_eq!(state.supply, 0);
+        assert_eq!(state.bids[0].user, "u1");
+        assert_eq!(state.bids[0].volume, 75);
+        assert_eq!(state.bids[0].price, 2);
     }
 
     #[test]
