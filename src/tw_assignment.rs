@@ -140,6 +140,7 @@ fn sell_impl(state: &mut AppStateImpl, sell_req: SellRequest) {
     
     //// allocate outstanding bids
     for i in (0..state.bids.len()).rev() {
+        if state.supply == 0 { return; }
         let user = state.bids[i].user.clone();
         let bid_value = state.bids[i].price * state.bids[i].volume;
         let bid_price = state.bids[i].price;
@@ -262,14 +263,145 @@ async fn main() -> std::io::Result<()> {
     std::io::Result::Ok(())
 }
 
+//// -----------  Property Tests
+
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+
+    /// supply added via /sell = total allocated + remaining supply 
+    #[test]
+    fn supply_conservation(
+        // e.g. vec![1, 100, 5]
+        supplies in prop::collection::vec(1u64..10_000, 1..10),
+        // bid: (volume, price), e.g. vec![(100,1), (50,4)]
+        bids in prop::collection::vec( (1u64..1_000, 1u64..100), 1..10 ),
+    ) {
+        let mut state = AppStateImpl::default();
+        let total_supply: u64 = supplies.iter().sum();
+
+        for (volume, price) in bids {
+            buy_impl(&mut state, BuyRequest::new("u1", volume, price));
+        }
+
+        for supply in supplies {
+            sell_impl(&mut state, SellRequest { volume: supply });
+        }
+
+        let total_allocated = state.allocations.values().sum::<u64>();
+        prop_assert_eq!(
+            total_supply,
+            total_allocated + state.supply
+        );
+    }
+
+    #[test]
+    fn fifo_within_same_price(
+        supply in 1u64..10_000,
+        price in 1u64..50,
+        volume in 1u64..1_000,
+    ) {
+        let mut state = AppStateImpl::default();
+        buy_impl(&mut state, BuyRequest::new("u1", volume, price));
+        buy_impl(&mut state, BuyRequest::new("u2", volume, price));
+        sell_impl(&mut state, SellRequest { volume: supply });
+        
+        let u1_alloc = state.allocations.get("u1").copied().unwrap_or(0);
+        let u2_alloc = state.allocations.get("u2").copied().unwrap_or(0);
+    
+        // u1 should fill before u2
+        prop_assert!(u1_alloc >= u2_alloc);
+    }
+
+    #[test]
+    fn higher_price_always_fills_first(
+        supply in 1u64..10_000,
+        lo_price in 1u64..50,
+        hi_price in 51u64..100,
+        volume in 1u64..1_000,
+    ) {
+        let mut state = AppStateImpl::default();
+        buy_impl(&mut state, BuyRequest::new("lo", volume, lo_price));
+        buy_impl(&mut state, BuyRequest::new("hi", volume, hi_price));
+        sell_impl(&mut state, SellRequest { volume: supply });
+        
+        let lo_alloc = state.allocations.get("lo").copied().unwrap_or(0);
+        let hi_alloc = state.allocations.get("hi").copied().unwrap_or(0);
+        
+        // hi should fill before lo
+        prop_assert!(hi_alloc >= lo_alloc);
+    }
+
+    #[test]
+    fn allocated_never_exceeds_supply(
+        supply in 0u64..10_000,
+        volume in 0u64..10_000,
+        price in 1u64..100
+    ) {
+        let mut state = AppStateImpl { supply, ..Default::default() };
+        buy_impl(&mut state, BuyRequest::new("u1", volume, price));
+        let allocated = state.allocations.get("u1").copied().unwrap_or(0);
+        prop_assert!(allocated <= supply);
+    }
+
+    #[test]
+    fn partial_fill_remainder_stays_open(
+        supply in 1u64..10_000, 
+        volume in 2u64..10_000, 
+        price in 1u64..100
+    ) {
+        prop_assume!(supply < price * volume); // force partial fill
+        let mut state = AppStateImpl { supply, ..Default::default() };
+        buy_impl(&mut state, BuyRequest::new("u1", volume, price));
+        prop_assert_eq!(state.supply, 0);
+        prop_assert!(!state.bids.is_empty()); // remainder stays open
+    }
+
+    #[test]
+    fn allocation_monotonically_increases(
+        supplies in prop::collection::vec(1u64..10_000, 1..10),
+            // 1–10 random elements, each between 1 and 10_000. 
+            // e.g. [500, 3200, 77] or [9999] or [1, 200, 50, 8000]
+        bids in prop::collection::vec((1u64..10_000, 1u64..100), 1..10),
+            // e.g. [(100, 3), (5000, 7), (200, 1)], each tuple (volume, price)
+    ) {
+        let mut state = AppStateImpl::default();
+        let mut prev_alloc = 0u64;
+
+        // each time: 
+        // - buy() : u1 bids
+        // - sell(): supply becomes available, u1 gets allocation  
+        // e.g.
+        // bids    : [(100, 3), (5000, 7), (200, 1)], each tuple (volume, price)
+        // supplies: [9999] 
+        //
+        for (volume, price) in bids {
+            buy_impl(&mut state, BuyRequest::new("u1", volume, price));
+            for supply in &supplies {
+                sell_impl(&mut state, SellRequest { volume: *supply });
+            }
+            let alloc = state.allocations.get("u1").copied().unwrap_or(0);
+            prop_assert!(alloc >= prev_alloc); // never decreases
+            prev_alloc = alloc;
+        }
+    }
+
+    } // end of macro proptest!
+}
+
+
 //// -----------  Unit Tests
 
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use actix_web::http::StatusCode;
 
     use super::*;
-    
+
     #[test]
     fn allocation() {
         let state = AppStateImpl { 
