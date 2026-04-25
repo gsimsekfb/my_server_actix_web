@@ -99,13 +99,12 @@ fn buy_impl(
     println!("-- Buy request #{}", state.request_no);
 
     //// 1. sell immediately if there is unused supply
-    let buy_value = price * volume;
     if state.supply > 0  {
         // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
-        if state.supply >= buy_value {
+        if state.supply >= volume {
             let &alloc = state.allocations.get(&user).unwrap_or(&0);
-            state.allocations.insert(user.clone(), alloc + buy_value);
-            state.supply -= buy_value;
+            state.allocations.insert(user.clone(), alloc + volume);
+            state.supply -= volume;
         // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         } else {  // partial fill: store unfilled as bid
             let state_supply = state.supply;
@@ -113,7 +112,7 @@ fn buy_impl(
             state.allocations.insert(user.clone(), alloc + state_supply);
             let seq = state.request_no;
             state.bids.push(
-                Bid::new(user, (buy_value - state_supply) / price, price, seq)
+                Bid::new(user, (volume - state_supply) / price, price, seq)
             );
             state.supply = 0;
         }
@@ -142,20 +141,20 @@ fn sell_impl(state: &mut AppStateImpl, sell_req: SellRequest) {
     for i in (0..state.bids.len()).rev() {
         if state.supply == 0 { return; }
         let user = state.bids[i].user.clone();
-        let bid_value = state.bids[i].price * state.bids[i].volume;
+        let bid_volume = state.bids[i].volume;
         let bid_price = state.bids[i].price;
         // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
-        if state.supply >= bid_value {
+        if state.supply >= bid_volume {
             let &alloc = state.allocations.get(&user).unwrap_or(&0);
-            state.allocations.insert(user.clone(), alloc + bid_value);
-            state.supply -= bid_value;
+            state.allocations.insert(user.clone(), alloc + bid_volume);
+            state.supply -= bid_volume;
             state.bids.remove(i);
         // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         } else {
             let state_supply = state.supply;
             let &alloc = state.allocations.get(&user).unwrap_or(&0);
             state.allocations.insert(user, alloc + state_supply);
-            state.bids[i].volume = (bid_value - state_supply) / bid_price;
+            state.bids[i].volume = bid_volume - state_supply;
             state.supply = 0;
         }
     };
@@ -354,7 +353,7 @@ mod property_tests {
         volume in 2u64..10_000, 
         price in 1u64..100
     ) {
-        prop_assume!(supply < price * volume); // force partial fill
+        prop_assume!(supply < volume); // force partial fill
         let mut state = AppStateImpl { supply, ..Default::default() };
         buy_impl(&mut state, BuyRequest::new("u1", volume, price));
         prop_assert_eq!(state.supply, 0);
@@ -422,11 +421,11 @@ mod unit_tests {
         buy_impl(&mut state, BuyRequest::new("u2", 150, 2));
         buy_impl(&mut state, BuyRequest::new("u3", 50, 4));
         sell_impl(&mut state, SellRequest { volume: 250 });
+        assert_eq!(state.allocations.get("u3").unwrap(), &50);
         assert_eq!(state.allocations.get("u1").unwrap(), &100);
         assert_eq!(state.allocations.get("u2").unwrap(), &100);
-        assert_eq!(state.allocations.get("u3").unwrap(), &50);
         let u2 = state.bids.iter().find(|bid| bid.user == "u2").unwrap();
-        assert_eq!(u2.volume * u2.price, 50);
+        assert_eq!(u2.volume, 50);
     }
 
     #[test]
@@ -463,7 +462,7 @@ mod unit_tests {
         // 2. allocate outstanding bids
         // case: full fill - state.supply = 60, buy: 50 => supply: 10, bid: 50
         let mut state = AppStateImpl { 
-            bids: vec![ Bid::new("u1".to_string(), 100, 2, 1) ],
+            bids: vec![ Bid::new("u1".to_string(), 200, 2, 1) ],
             ..Default::default()
         };
         sell_impl(&mut state, SellRequest { volume: 300 });
@@ -479,7 +478,7 @@ mod unit_tests {
         assert_eq!(state.allocations.get("u1").unwrap(), &50);
         assert_eq!(state.supply, 0);
         assert_eq!(state.bids[0].user, "u1");
-        assert_eq!(state.bids[0].volume, 75);
+        assert_eq!(state.bids[0].volume, 50);
         assert_eq!(state.bids[0].price, 2);
     }
 
@@ -488,7 +487,7 @@ mod unit_tests {
         //// 1. sell immediately if there is unused supply
         // full fill
         let mut state = AppStateImpl { supply: 200, ..Default::default() };
-        let buy_req = BuyRequest::new("u1", 100, 2);
+        let buy_req = BuyRequest::new("u1", 200, 2);
         buy_impl(&mut state, buy_req);
         assert_eq!(state.request_no, 1);
         assert_eq!(state.allocations.get("u1").unwrap(), &200);
@@ -502,7 +501,7 @@ mod unit_tests {
         assert_eq!(state.supply, 0);
         assert_eq!(state.allocations.get("u1").unwrap(), &50);
         assert_eq!(state.bids.len(), 1);
-        assert_eq!(state.bids[0].volume, 75);
+        assert_eq!(state.bids[0].volume, 25);
         assert_eq!(state.bids[0].price, 2);
         assert_eq!(state.bids[0].seq, 1);
 
@@ -540,17 +539,17 @@ mod unit_tests {
         //// 1. sell immediately if there is unused supply
         // full fill
         let mut state = AppStateImpl { supply: 400, ..Default::default() };
-        let buy_req = BuyRequest::new("u1", 100, 2);
+        let buy_req = BuyRequest::new("u1", 200, 2);
         buy_impl(&mut state, buy_req);
-        let buy_req = BuyRequest::new("u1", 100, 2);
+        let buy_req = BuyRequest::new("u1", 200, 2);
         buy_impl(&mut state, buy_req);
         assert_eq!(state.allocations.get("u1").unwrap(), &400);
 
         // partial fill
         let mut state = AppStateImpl { supply: 300, ..Default::default() };
-        let buy_req = BuyRequest::new("u1", 100, 2);
+        let buy_req = BuyRequest::new("u1", 200, 2);
         buy_impl(&mut state, buy_req);
-        let buy_req = BuyRequest::new("u1", 100, 2);
+        let buy_req = BuyRequest::new("u1", 200, 2);
         buy_impl(&mut state, buy_req);
         assert_eq!(state.allocations.get("u1").unwrap(), &300);
 
