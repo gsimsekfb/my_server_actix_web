@@ -402,6 +402,33 @@ mod unit_tests {
 
     use super::*;
 
+
+    // Example
+    //     Events:
+    //
+    //     t1: u1 bids 100 @ 3
+    //     t2: u2 bids 150 @ 2
+    //     t3: u3 bids 50 @ 4
+    //     t4: provider sells 250
+    //     Allocation at t4:
+
+    //     50 → u3
+    //     100 → u1
+    //     100 → u2 (u2 still open for 50)
+    #[test]
+    fn unused_supply_auto_sold() {
+        let mut state = AppStateImpl::default();
+        buy_impl(&mut state, BuyRequest::new("u1", 100, 3));
+        buy_impl(&mut state, BuyRequest::new("u2", 150, 2));
+        buy_impl(&mut state, BuyRequest::new("u3", 50, 4));
+        sell_impl(&mut state, SellRequest { volume: 250 });
+        assert_eq!(state.allocations.get("u1").unwrap(), &100);
+        assert_eq!(state.allocations.get("u2").unwrap(), &100);
+        assert_eq!(state.allocations.get("u3").unwrap(), &50);
+        let u2 = state.bids.iter().find(|bid| bid.user == "u2").unwrap();
+        assert_eq!(u2.volume * u2.price, 50);
+    }
+
     #[test]
     fn allocation() {
         let state = AppStateImpl { 
@@ -503,6 +530,38 @@ mod unit_tests {
         assert_eq!(state.request_no, 3);
         assert_eq!(state.bids.len(), 3);
         assert_eq!(state.bids.last().unwrap().user, "u3");
+    }
+
+    /// Same user buys twice
+    /// - allocation should accumulate, not overwrite
+    /// - bids should be separate and unique
+    #[test]
+    fn buy_same_user_buys_twice() {
+        //// 1. sell immediately if there is unused supply
+        // full fill
+        let mut state = AppStateImpl { supply: 400, ..Default::default() };
+        let buy_req = BuyRequest::new("u1", 100, 2);
+        buy_impl(&mut state, buy_req);
+        let buy_req = BuyRequest::new("u1", 100, 2);
+        buy_impl(&mut state, buy_req);
+        assert_eq!(state.allocations.get("u1").unwrap(), &400);
+
+        // partial fill
+        let mut state = AppStateImpl { supply: 300, ..Default::default() };
+        let buy_req = BuyRequest::new("u1", 100, 2);
+        buy_impl(&mut state, buy_req);
+        let buy_req = BuyRequest::new("u1", 100, 2);
+        buy_impl(&mut state, buy_req);
+        assert_eq!(state.allocations.get("u1").unwrap(), &300);
+
+        //// 2. otherwise, store req into bids
+        let mut state = AppStateImpl::default();
+
+        buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
+        buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
+        assert_eq!(state.bids.len(), 2);
+        assert_eq!(state.bids[0].user, "u1");
+        assert_eq!(state.bids[1].user, "u1");
     }
 }
 
