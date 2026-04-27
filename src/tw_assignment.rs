@@ -262,6 +262,129 @@ async fn main() -> std::io::Result<()> {
     std::io::Result::Ok(())
 }
 
+
+//// -----------  Concurrency Tests
+mod concurrency_tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    /// send same price buy requests, then
+    /// - same price bids with smaller seq numbers should be at the end of 
+    ///   bids vector
+    /// - check bid vector if seq numbers are unique
+    /// - check ordering of same price bids
+    #[tokio::test]
+    async fn same_price_buy_requests() {
+        let state = web::Data::new(AppState::default());
+
+        let handles = (0..5).map(|_| {
+            let state = state.clone();
+            tokio::spawn(async move {
+                let mut state = state.inner.lock().unwrap();
+                buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
+            })
+        });
+
+        for h in handles { h.await.unwrap() }
+
+        let state = state.inner.lock().unwrap();
+
+        // 1. assert no same seq numbers
+        let unique: HashSet<_> = state.bids.iter().map(|b| b.seq).collect();
+        assert_eq!(state.bids.len(), unique.len());
+
+        // 2. assert ordering of same price bids
+        assert_eq!(state.bids.last().unwrap().seq, 1);
+        // or
+        // check two elem windows
+        let seqs = state.bids.iter().map(|b| b.seq).collect::<Vec<u64>>();
+        assert!( seqs.windows(2).all(|w| w[0] > w[1]) );
+    }
+
+    #[tokio::test]
+    async fn buy_and_sell() {
+        let state = web::Data::new(AppState::default());
+
+        let mut handles = vec![];
+
+        // 50 concurrent buys
+        for i in 0..50 {
+            let state = state.clone();
+            handles.push(tokio::spawn(async move {
+                let mut s = state.inner.lock().unwrap();
+                buy_impl(&mut s, BuyRequest::new(format!("u{i}"), 10, 1));
+            }));
+        }
+
+        // 50 concurrent sells
+        for _ in 0..50 {
+            let state = state.clone();
+            handles.push(tokio::spawn(async move {
+                let mut s = state.inner.lock().unwrap();
+                sell_impl(&mut s, SellRequest { volume: 10 });
+            }));
+        }
+
+        for h in handles { h.await.unwrap(); }
+
+        let s = state.inner.lock().unwrap();
+        let total_allocated: u64 = s.allocations.values().sum();
+        let total_supply = 50 * 10; // 500
+        assert_eq!(total_allocated + s.supply, total_supply);
+    }
+
+    /// claude ai
+    #[tokio::test]
+    async fn buys_no_oversell_v2() {
+        let state = web::Data::new(AppState::default());
+    
+        let mut handles = vec![];
+        for i in 0..100 {
+            let state = state.clone();
+            handles.push(tokio::spawn(async move {
+                let mut s = state.inner.lock().unwrap();
+                buy_impl(&mut s, BuyRequest::new(format!("u{i}"), 10, 1));
+            }));
+        }
+        for h in handles { h.await.unwrap(); }
+
+        sell_impl(&mut state.inner.lock().unwrap(), SellRequest { volume: 500 });
+
+        let state = state.inner.lock().unwrap();
+        let total_allocated: u64 = state.allocations.values().sum();
+        assert_eq!(total_allocated + state.supply, 500);
+    }
+
+    #[tokio::test]
+    async fn buys_no_oversell() {
+        let total_supply = 500;
+        let state = web::Data::new(
+            AppState { inner: Mutex::new( 
+                AppStateImpl { supply: total_supply, ..Default::default() } 
+            )}
+        );
+
+        let handles = (0..100).map(|_| {
+            let state = state.clone();
+            tokio::spawn(async move {
+                let mut state = state.inner.lock().unwrap();
+                buy_impl(&mut state, BuyRequest::new("u1", 200, 2));
+            })
+        });
+
+        for h in handles { h.await.unwrap(); }
+    
+        let state = state.inner.lock().unwrap();
+        let total_allocated: u64 = state.allocations.values().sum();
+        let leftover_supply = state.supply;
+        assert_eq!(total_supply, total_allocated + leftover_supply);
+        
+    }
+
+}
+
+
 //// -----------  Property Tests
 
 
@@ -487,8 +610,7 @@ mod unit_tests {
         //// 1. sell immediately if there is unused supply
         // full fill
         let mut state = AppStateImpl { supply: 200, ..Default::default() };
-        let buy_req = BuyRequest::new("u1", 200, 2);
-        buy_impl(&mut state, buy_req);
+        buy_impl(&mut state, BuyRequest::new("u1", 200, 2));
         assert_eq!(state.request_no, 1);
         assert_eq!(state.allocations.get("u1").unwrap(), &200);
         assert_eq!(state.supply, 0);

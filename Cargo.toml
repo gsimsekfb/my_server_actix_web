@@ -16,81 +16,84 @@ serde = "1.0.228"
 serde_json = "1.0.149"
 tokio = "1.52.1"
 
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+
 [lints.clippy]
 four_forward_slashes = "allow"
-
-[[bin]]
-name = "main"
-path = "src/main.rs"
-
-[[bin]]
-name = "main_0"
-path = "src/main_0_hello_template.rs"
-
-[[bin]]
-name = "main_1"
-path = "src/main_1_hello.rs"
-
-[[bin]]
-name = "main_2"
-path = "src/main_2_app_state_simple.rs"
-
-[[bin]]
-name = "main_3"
-path = "src/main_3_app_state_mutable_global.rs"
-
-[[bin]]
-name = "main_4_1"
-path = "src/main_4_1_extractors_path.rs"
-
-[[bin]]
-name = "main_4_2"
-path = "src/main_4_2_extractors_query_json_form.rs"
-
-[[bin]]
-name = "main_4_3"
-path = "src/main_4_3_extractors_app_state.rs"
-
-[[bin]]
-name = "main_5"
-path = "src/main_5_HttpResponse_Responder_aka_HttpReq_handlers.rs"
-
-[[bin]]
-name = "main_6_1"
-path = "src/main_6_1_middleware_basics.rs"
-
-[[bin]]
-name = "main_6_2"
-path = "src/main_6_2_default_headers_middleware.rs"
-
-[[bin]]
-name = "main_6_3"
-path = "src/main_6_3_Error_Handlers_middleware.rs"
-
-[[bin]]
-name = "main_6_4"
-path = "src/main_6_4_logging_middleware.rs"
-
-[[bin]]
-name = "main_6_5"
-path = "src/main_6_5_user_sessions_middleware.rs"
-
-[[bin]]
-name = "main_7_0"
-path = "src/main_7_0_Errors.rs"
-
-[[bin]]
-name = "main_7_1"
-path = "src/main_7_1_Error_Logging.rs"
 
 [[bin]]
 name = "twin"
 path = "src/tw_assignment.rs"
 
-[[bin]]
-name = "main_8_0"
-path = "src/main_8_0_Testing.rs"
+# [[bin]]
+# name = "main"
+# path = "src/main.rs"
 
-[[bin]]
-name = "main_8_1"
-path = "src/main_8_1_Testing_Streams.rs"
+# [[bin]]
+# name = "main_0"
+# path = "src/main_0_hello_template.rs"
+
+# [[bin]]
+# name = "main_1"
+# path = "src/main_1_hello.rs"
+
+# [[bin]]
+# name = "main_2"
+# path = "src/main_2_app_state_simple.rs"
+
+# [[bin]]
+# name = "main_3"
+# path = "src/main_3_app_state_mutable_global.rs"
+
+# [[bin]]
+# name = "main_4_1"
+# path = "src/main_4_1_extractors_path.rs"
+
+# [[bin]]
+# name = "main_4_2"
+# path = "src/main_4_2_extractors_query_json_form.rs"
+
+# [[bin]]
+# name = "main_4_3"
+# path = "src/main_4_3_extractors_app_state.rs"
+
+# [[bin]]
+# name = "main_5"
+# path = "src/main_5_HttpResponse_Responder_aka_HttpReq_handlers.rs"
+
+# [[bin]]
+# name = "main_6_1"
+# path = "src/main_6_1_middleware_basics.rs"
+
+# [[bin]]
+# name = "main_6_2"
+# path = "src/main_6_2_default_headers_middleware.rs"
+
+# [[bin]]
+# name = "main_6_3"
+# path = "src/main_6_3_Error_Handlers_middleware.rs"
+
+# [[bin]]
+# name = "main_6_4"
+# path = "src/main_6_4_logging_middleware.rs"
+
+# [[bin]]
+# name = "main_6_5"
+# path = "src/main_6_5_user_sessions_middleware.rs"
+
+# [[bin]]
+# name = "main_7_0"
+# path = "src/main_7_0_Errors.rs"
+
+# [[bin]]
+# name = "main_7_1"
+# path = "src/main_7_1_Error_Logging.rs"
+
+# [[bin]]
+# name = "main_8_0"
+# path = "src/main_8_0_Testing.rs"
+
+# [[bin]]
+# name = "main_8_1"
+# path = "src/main_8_1_Testing_Streams.rs"
