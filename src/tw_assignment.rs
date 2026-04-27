@@ -6,7 +6,7 @@ use actix_web::{
     App, Error, HttpServer, Responder, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, 
     post, Result, web
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::{Mutex, MutexGuard}};
 
 /* Cheatsheet
@@ -22,7 +22,14 @@ curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"v
 */
 
 //// ------ Requests
-#[derive(Deserialize)]
+
+// todo: maybe todo ?
+enum Request {
+    Buy(BuyRequest),
+    Sell(SellRequest),
+}
+
+#[derive(Deserialize, Serialize)]
 struct BuyRequest { user: String, volume: u64, price: u64, }
 impl BuyRequest { 
     fn new(user: impl ToString, volume: u64, price: u64) -> Self {
@@ -30,7 +37,7 @@ impl BuyRequest {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct SellRequest { volume: u64, }
 
 #[derive(Clone, Deserialize)]
@@ -39,7 +46,7 @@ struct AllocationQuery { username: String }
 
 
 //// ----- App State
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct AppState { inner: Mutex<AppStateImpl> }
 
 #[derive(Default, Debug)]
@@ -81,7 +88,6 @@ async fn buy(
     let mut state_ = state.inner.lock().unwrap();
     buy_impl(&mut state_, req.0);
 
-    let state_ = state.inner.lock().unwrap();
     format!("\nstate: {state_:#?}\n ")
 
     // format!("{}: {alloc:?}\n", &user) + 
@@ -196,11 +202,11 @@ async fn allocation(
 ) -> Result<String> {
     let state_ = state.inner.lock().unwrap();
     let res = allocation_impl(&state_, req.0.clone());
-
-    let state_ = state.inner.lock().unwrap();
     if let Ok(alloc) = res {
-        Ok( format!("\n{}: {alloc:?}\n", &req.username) + 
-            &format!("\nstate: {state_:#?}\n ") )
+        Ok(alloc.to_string())
+        // Debug:        
+        // Ok( format!("\n{}: {alloc:?}\n", &req.username) + 
+        //     &format!("\nstate: {state_:#?}\n ") )
     } else {
         Err(error::ErrorBadRequest("missing username\n"))
     }
@@ -262,6 +268,137 @@ async fn main() -> std::io::Result<()> {
     std::io::Result::Ok(())
 }
 
+
+mod http_tests {
+
+    use actix_web::{http::StatusCode, test, test::TestRequest};
+
+    use super::*;
+
+    fn test_buy_request(req: BuyRequest) -> actix_http::Request {
+        TestRequest::post().uri("/buy").set_json(req).to_request()
+    }
+
+    fn test_sell_request(req: SellRequest) -> actix_http::Request {
+        TestRequest::post().uri("/sell").set_json(req).to_request()
+    }
+
+
+    // Invalid JSON body returns 400
+    #[actix_web::test]
+    async fn test_invalid_json_req_returns_400_error() {
+        let state = web::Data::new(AppState::default());
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .service(buy)
+                .service(sell)
+                .service(allocation)
+        ).await;
+
+        let req = test::TestRequest::post()
+            .uri("/buy")
+            .set_payload("invalid json {{{")
+            .insert_header(("content-type", "application/json"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);        
+    }
+
+    /*
+    Events:
+        t1: u1 bids 100 @ 3
+        t2: u2 bids 150 @ 2
+        t3: u3 bids 50 @ 4
+        t4: provider sells 250
+
+    Allocation at t4:
+        50 → u3
+        100 → u1
+        100 → u2 (u2 still open for 50) 
+    */    
+    #[actix_web::test]
+    async fn test_example_in_assignment_doc() {
+        let state = web::Data::new(AppState::default());
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .service(buy)
+                .service(sell)
+                .service(allocation)
+        ).await;
+
+        //// buy
+        let req = test_buy_request(BuyRequest::new("u1", 100, 3));
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let req = test_buy_request(BuyRequest::new("u2", 150, 2));
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let req = test_buy_request(BuyRequest::new("u3", 50, 4));
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        //// sell
+        let req = test_sell_request(SellRequest { volume: 250 });
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        //// allocation
+        let req = TestRequest::get().uri("/allocation?username=u1").to_request();
+        let body: u64 = test::call_and_read_body_json(&app, req).await;
+        assert_eq!(body, 100);
+
+        let req = TestRequest::get().uri("/allocation?username=u2").to_request();
+        let body: u64 = test::call_and_read_body_json(&app, req).await;
+        assert_eq!(body, 100);
+
+        let req = TestRequest::get().uri("/allocation?username=u3").to_request();
+        let body: u64 = test::call_and_read_body_json(&app, req).await;
+        assert_eq!(body, 50);
+
+        //// bid
+        // (u2 still open for 50)
+        assert_eq!(state.inner.lock().unwrap().bids[0].volume, 50);
+    }
+
+    #[actix_web::test]
+    async fn test_basics_buy_sell_allocation() {
+        let state = web::Data::new(AppState::default());    
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .service(buy)
+                .service(sell)
+                .service(allocation)
+        ).await;
+
+        //// buy
+        let req = test_buy_request(BuyRequest::new("u1", 100, 2));
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        //// sell
+        let req = test_sell_request(SellRequest { volume: 100 });
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        //// allocation
+        // good case
+        let req = test::TestRequest::get().uri("/allocation?username=u1").to_request();
+        let body: u64 = test::call_and_read_body_json(&app, req).await;
+        assert_eq!(body, 100);
+        // bad cases
+        let req = TestRequest::get().uri("/allocation?username=u8").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let req = TestRequest::get().uri("/allocation?username").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+}
 
 //// -----------  Concurrency Tests
 mod concurrency_tests {
