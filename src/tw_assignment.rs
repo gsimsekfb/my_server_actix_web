@@ -23,12 +23,6 @@ curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"v
 
 //// ------ Requests
 
-// todo: maybe todo ?
-enum Request {
-    Buy(BuyRequest),
-    Sell(SellRequest),
-}
-
 #[derive(Deserialize, Serialize)]
 struct BuyRequest { user: String, volume: u64, price: u64, }
 impl BuyRequest { 
@@ -42,8 +36,17 @@ struct SellRequest { volume: u64, }
 
 #[derive(Clone, Deserialize)]
 struct AllocationQuery { username: String }
-    // todo: use Cow ?
-
+    // Use Cow ? - No 
+    // - Cow avoids allocation when you pass a &str, only allocates when you 
+    //   pass a String.
+    // - For this program, from HTTP requests — always String
+    //   (deserialized from JSON/query params). So Cow brings no benefit here,
+    //   String is fine.
+    // - And these will make the API more flexible (use in "ctors"):
+    // - impl Into<String> — caller can pass &str or String, 
+    //   allocation happens inside the function
+    // - impl AsRef<str> — caller can pass &str or String, no allocation, 
+    //   just borrows
 
 //// ----- App State
 #[derive(Debug, Default)]
@@ -187,12 +190,18 @@ fn allocation_impl(
     state: &AppStateImpl, 
     req: AllocationQuery
 ) -> Result<u64> {
-    // todo: refactor
-    if let Some(alloc) = state.allocations.get(&req.username) {
-        Ok(*alloc)
-    } else {
-        Err(error::ErrorBadRequest("missing username\n"))
-    }
+    state.allocations.get(&req.username)
+        .copied()  // Option<&u64> to Option<64>
+        // Option to Result
+        .ok_or_else(|| error::ErrorBadRequest("missing username\n"))
+
+    // or more readable:
+    //
+    // if let Some(alloc) = state.allocations.get(&req.username) {
+    //     Ok(*alloc)
+    // } else {
+    //     Err(error::ErrorBadRequest("missing username\n"))
+    // }
 }
 
 #[get("/allocation")]
