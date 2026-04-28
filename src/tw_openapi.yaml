@@ -1,0 +1,53 @@
+openapi: 3.0.0
+info:
+  title: Twin VM Allocation API
+  version: 1.0.0
+paths:
+  /buy:
+    post:
+      summary: Register a bid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user:
+                  type: string
+                volume:
+                  type: integer
+                price:
+                  type: integer
+      responses:
+        '200':
+          description: OK
+  /sell:
+    post:
+      summary: Add supply
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                volume:
+                  type: integer
+      responses:
+        '200':
+          description: OK
+  /allocation:
+    get:
+      summary: Get allocation for a user
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Allocated VM-hours as integer
+        '400':
+          description: Missing or invalid username
