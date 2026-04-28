@@ -401,6 +401,7 @@ mod http_tests {
 }
 
 //// -----------  Concurrency Tests
+#[cfg(test)]
 mod concurrency_tests {
     use std::collections::HashSet;
 
