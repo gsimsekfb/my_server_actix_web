@@ -1,4 +1,3 @@
-#![allow(unused_variables)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
@@ -63,8 +62,8 @@ struct AppStateImpl {
 #[derive(Debug)]
 struct Bid { user: String, volume: u64, price: u64, seq: u64, }
 impl Bid { 
-    fn new(user: String, volume: u64, price: u64, seq: u64) -> Self { 
-        Self { user, volume, price, seq} 
+    fn new(user: impl Into<String>, volume: u64, price: u64, seq: u64) -> Self { 
+        Self { user: user.into(), volume, price, seq} 
     }
 }
 
@@ -75,14 +74,6 @@ curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d
 curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d "{\"user\":\"u2\",\"volume\":150,\"price\":2}"
 curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d "{\"user\":\"u3\",\"volume\":50,\"price\":4}"
 */
-/// Behavior: register bid; immediately allocate if leftover supply is available.
-/// 3. Buy request comes, sell immediately if there is unused supply otherwise
-///    store incoming buys as "bids" in memory (possibly sorted by price).
-/// Allocation rules
-/// + Highest price wins.
-/// + FIFO inside a price level (earlier bids at the same price fill first).
-/// + Partial fills allowed; unfilled remainder stays open.
-/// + Unused supply persists and must auto-match any subsequent bids arriving later.
 
 #[post("/buy")]
 async fn buy(
@@ -97,6 +88,18 @@ async fn buy(
     //     &format!("state: {state:#?}\n ")
 }
 
+/// Behavior: register bid; immediately allocate if leftover supply is available.
+/// 3. Buy request comes, sell immediately if there is unused supply otherwise
+///    store incoming buys as "bids" in memory (possibly sorted by price).
+/// Allocation rules
+/// + Highest price wins.
+/// + FIFO inside a price level (earlier bids at the same price fill first).
+/// + Partial fills allowed; unfilled remainder stays open.
+/// + Unused supply persists and must auto-match any subsequent bids arriving
+///   later.
+/// 
+/// Big O: n log(n) - due to bids.sort_by
+/// 
 fn buy_impl(
     state: &mut AppStateImpl,
     buy_req: BuyRequest
@@ -121,8 +124,9 @@ fn buy_impl(
             state.allocations.insert(user.clone(), alloc + state_supply);
             let seq = state.request_no;
             state.bids.push(
-                Bid::new(user, (volume - state_supply) / price, price, seq)
+                Bid::new(user, volume - state_supply, price, seq)
             );
+            // todo: sort? No, bids vec is empty at this point
             state.supply = 0;
         }
     }
@@ -136,48 +140,52 @@ fn buy_impl(
     }
 }
 
-/// Behavior: add supply and allocate to outstanding bids
-/// 2. When sell comes, check stored list of bids and sell starting from the 
-//     highest price or if no bids, store as supply.
 /* 
 curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"volume\":500}"
 */
-fn sell_impl(state: &mut AppStateImpl, sell_req: SellRequest) {
-    //// add incoming sell into supply
-    state.supply += sell_req.volume;
-    
-    //// allocate outstanding bids
-    for i in (0..state.bids.len()).rev() {
-        if state.supply == 0 { return; }
-        let user = state.bids[i].user.clone();
-        let bid_volume = state.bids[i].volume;
-        let bid_price = state.bids[i].price;
-        // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
-        if state.supply >= bid_volume {
-            let &alloc = state.allocations.get(&user).unwrap_or(&0);
-            state.allocations.insert(user.clone(), alloc + bid_volume);
-            state.supply -= bid_volume;
-            state.bids.remove(i);
-        // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
-        } else {
-            let state_supply = state.supply;
-            let &alloc = state.allocations.get(&user).unwrap_or(&0);
-            state.allocations.insert(user, alloc + state_supply);
-            state.bids[i].volume = bid_volume - state_supply;
-            state.supply = 0;
-        }
-    };
-
-    let total_alloc: u64 = state.allocations.values().sum();
-    dbg!(total_alloc);
-}
-
 #[post("/sell")]
 async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl Responder {
     let mut state = state.inner.lock().unwrap();
     sell_impl(&mut state, req.0);
 
     format!("\nstate: {state:#?}\n ")
+}
+
+/// Behavior: add supply and allocate to outstanding bids
+/// 2. When sell comes, check stored list of bids and sell starting from the 
+///    highest price or if no bids, store as supply.
+///
+///    Big O: O(n) - due to looping bids
+///
+fn sell_impl(state: &mut AppStateImpl, sell_req: SellRequest) {
+    //// add incoming sell into supply
+    state.supply += sell_req.volume;
+
+    //// allocate outstanding bids
+    for i in (0..state.bids.len()).rev() {  // O(n)
+        if state.supply == 0 { break; }
+        let user = state.bids[i].user.clone();
+        let bid_volume = state.bids[i].volume;
+        // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
+        if state.supply >= bid_volume {
+            let &alloc = state.allocations.get(&user).unwrap_or(&0);
+            state.allocations.insert(user.clone(), alloc + bid_volume);
+            state.supply -= bid_volume;
+            state.bids.remove(i);           
+                // Not O(n) but O(1) - since i always last elem
+        // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
+        } else {
+            let state_supply = state.supply;
+            let &alloc = state.allocations.get(&user).unwrap_or(&0);
+            state.allocations.insert(user, alloc + state_supply);
+            state.bids[i].volume = bid_volume - state_supply;
+            state.supply = 0; // we could only partial fill, means supply is 0
+            break;
+        }
+    };
+
+    let total_alloc: u64 = state.allocations.values().sum();
+    dbg!(total_alloc);
 }
 
 /// Behavior: return the integer total VM-hours allocated to u1 so far.
@@ -221,6 +229,7 @@ async fn allocation(
     }
 }
 
+/// show full app state
 async fn index(app_state: web::Data<AppState>) -> String {
     println!("-- thread: {:?}", std::thread::current().id());
     format!("state: {:?}\n", app_state.inner.lock().unwrap())
@@ -228,6 +237,7 @@ async fn index(app_state: web::Data<AppState>) -> String {
 
 //// ----- Middleware
 
+/// not functional for now
 async fn my_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
@@ -255,7 +265,7 @@ async fn main() -> std::io::Result<()> {
     );
 
     // closure will be run per worker thread (at startup), default workers: 8
-    let server = HttpServer::new(move || { // move app_state into the closure
+    HttpServer::new(move || { // move app_state into the closure
         App::new()
             .wrap(Logger::default())
             // clone for each worker thread
@@ -268,10 +278,8 @@ async fn main() -> std::io::Result<()> {
     })
     .workers(2) // to have a lite program
     .bind(("127.0.0.1", 8080))?
-    .run();
-
-    let handle = server.handle();
-    server.await?;
+    .run()
+    .await?;
  
     println!("Server was shut-down");
     std::io::Result::Ok(())
@@ -293,7 +301,7 @@ mod http_tests {
     }
 
 
-    // Invalid JSON body returns 400
+    // Buy request w/ invalid JSON body returns error 400
     #[actix_web::test]
     async fn test_invalid_json_req_returns_400_error() {
         let state = web::Data::new(AppState::default());
@@ -374,7 +382,7 @@ mod http_tests {
     }
 
     #[actix_web::test]
-    async fn test_basics_buy_sell_allocation() {
+    async fn test_basics_buy_sell_and_allocation() {
         let state = web::Data::new(AppState::default());    
         let app = test::init_service(
             App::new()
@@ -449,6 +457,7 @@ mod concurrency_tests {
         assert!( seqs.windows(2).all(|w| w[0] > w[1]) );
     }
 
+    /// Buys and sells, check allocations + remaining supply = initial supply
     #[tokio::test]
     async fn buy_and_sell() {
         let state = web::Data::new(AppState::default());
@@ -526,7 +535,6 @@ mod concurrency_tests {
         let total_allocated: u64 = state.allocations.values().sum();
         let leftover_supply = state.supply;
         assert_eq!(total_supply, total_allocated + leftover_supply);
-        
     }
 
 }
@@ -568,6 +576,7 @@ mod property_tests {
         );
     }
 
+    /// Early arrived request will be filled first for same price requests
     #[test]
     fn fifo_within_same_price(
         supply in 1u64..10_000,
@@ -586,6 +595,7 @@ mod property_tests {
         prop_assert!(u1_alloc >= u2_alloc);
     }
 
+    /// Higher price requests will be filled first
     #[test]
     fn higher_price_always_fills_first(
         supply in 1u64..10_000,
@@ -732,7 +742,7 @@ mod unit_tests {
         // 2. allocate outstanding bids
         // case: full fill - state.supply = 60, buy: 50 => supply: 10, bid: 50
         let mut state = AppStateImpl { 
-            bids: vec![ Bid::new("u1".to_string(), 200, 2, 1) ],
+            bids: vec![ Bid::new("u1", 200, 2, 1) ],
             ..Default::default()
         };
         sell_impl(&mut state, SellRequest { volume: 300 });
@@ -741,7 +751,7 @@ mod unit_tests {
         assert!(state.bids.is_empty());
         // case: partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         let mut state = AppStateImpl { 
-            bids: vec![ Bid::new("u1".to_string(), 100, 2, 1) ],
+            bids: vec![ Bid::new("u1", 100, 2, 1) ],
             ..Default::default()
         };
         sell_impl(&mut state, SellRequest { volume: 50 });
@@ -770,7 +780,7 @@ mod unit_tests {
         assert_eq!(state.supply, 0);
         assert_eq!(state.allocations.get("u1").unwrap(), &50);
         assert_eq!(state.bids.len(), 1);
-        assert_eq!(state.bids[0].volume, 25);
+        assert_eq!(state.bids[0].volume, 50);
         assert_eq!(state.bids[0].price, 2);
         assert_eq!(state.bids[0].seq, 1);
 
@@ -798,6 +808,17 @@ mod unit_tests {
         assert_eq!(state.request_no, 3);
         assert_eq!(state.bids.len(), 3);
         assert_eq!(state.bids.last().unwrap().user, "u3");
+    }
+
+    /// Higher price requests will be filled first
+    #[test]
+    fn higher_price_always_fills_first() {
+        let mut state = AppStateImpl::default();
+        buy_impl(&mut state, BuyRequest::new("u1", 200, 2));
+        buy_impl(&mut state, BuyRequest::new("u2", 200, 4));
+        buy_impl(&mut state, BuyRequest::new("u3", 200, 10));
+        sell_impl(&mut state, SellRequest { volume: 300 });
+    
     }
 
     /// Same user buys twice
