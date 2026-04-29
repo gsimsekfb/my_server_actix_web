@@ -57,6 +57,12 @@ struct AppStateImpl {
     allocations: HashMap<String, u64>,  // allocated 
     supply: u64,                        // unallocated 
     bids: Vec<Bid>,
+        // Vec
+            // buy : O(n log n) - sort bids vec
+            // sell: O(n) - iterate bids vec
+        // BTreeMap
+            // buy : O(log n) - insert/remove
+            // sell: O(k log n) - k removals, k <= n
 }
 
 #[derive(Debug)]
