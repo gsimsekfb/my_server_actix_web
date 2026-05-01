@@ -6,7 +6,7 @@ use actix_web::{
     post, Result, web
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::{Mutex, MutexGuard}};
+use std::{cmp::Reverse, collections::{BTreeMap, HashMap}, sync::{Mutex, MutexGuard}};
 
 /* Cheatsheet
 .
@@ -56,13 +56,19 @@ struct AppStateImpl {
     request_no: u64,
     allocations: HashMap<String, u64>,  // allocated 
     supply: u64,                        // unallocated 
-    bids: Vec<Bid>,
+    // Highest price top element. For same price bids, smaller seq on top
+    // (Reverse(price), seq)
+    bids: BTreeMap<(Reverse<u64>, u64), Bid>,
         // Vec
             // buy : O(n log n) - sort bids vec
             // sell: O(n) - iterate bids vec
         // BTreeMap
-            // buy : O(log n) - insert/remove
-            // sell: O(k log n) - k removals, k <= n
+            // buy : O(log n) - insert
+            // sell: O(n) - retain will visit every elem
+}
+
+fn price_seq_pair(price: u64, seq: u64) -> (Reverse<u64>, u64) {
+    (Reverse(price), seq)
 }
 
 #[derive(Debug)]
@@ -104,7 +110,7 @@ async fn buy(
 /// + Unused supply persists and must auto-match any subsequent bids arriving
 ///   later.
 /// 
-/// Big O: n log(n) - due to bids.sort_by
+/// Big O: log N - btreemap insert
 /// 
 fn buy_impl(
     state: &mut AppStateImpl,
@@ -129,7 +135,8 @@ fn buy_impl(
             let &alloc = state.allocations.get(&user).unwrap_or(&0);
             state.allocations.insert(user.clone(), alloc + state_supply);
             let seq = state.request_no;
-            state.bids.push(
+            state.bids.insert(
+                (Reverse(price), seq),
                 Bid::new(user, volume - state_supply, price, seq)
             );
             // todo: sort? No, bids vec is empty at this point
@@ -141,8 +148,10 @@ fn buy_impl(
     ////    - same price bids, early bid stored at the end of bids vector 
     else {
         let seq = state.request_no;
-        state.bids.push(Bid::new(user, volume, price, seq));
-        state.bids.sort_by(|a, b| a.price.cmp(&b.price).then(b.seq.cmp(&a.seq)));
+        state.bids.insert(
+            (Reverse(price), seq), 
+            Bid::new(user, volume, price, seq)
+        );
     }
 }
 
@@ -161,34 +170,32 @@ async fn sell(state: web::Data<AppState>, req: web::Json<SellRequest>) -> impl R
 /// 2. When sell comes, check stored list of bids and sell starting from the 
 ///    highest price or if no bids, store as supply.
 ///
-///    Big O: O(n) - due to looping bids
+///    Big O: N - retain will visit every elem (those returns are like breaks)
 ///
 fn sell_impl(state: &mut AppStateImpl, sell_req: SellRequest) {
     //// add incoming sell into supply
     state.supply += sell_req.volume;
 
-    //// allocate outstanding bids
-    for i in (0..state.bids.len()).rev() {  // O(n)
-        if state.supply == 0 { break; }
-        let user = state.bids[i].user.clone();
-        let bid_volume = state.bids[i].volume;
-        // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
-        if state.supply >= bid_volume {
-            let &alloc = state.allocations.get(&user).unwrap_or(&0);
-            state.allocations.insert(user.clone(), alloc + bid_volume);
-            state.supply -= bid_volume;
-            state.bids.remove(i);           
-                // Not O(n) but O(1) - since i always last elem
-        // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
-        } else {
-            let state_supply = state.supply;
-            let &alloc = state.allocations.get(&user).unwrap_or(&0);
-            state.allocations.insert(user, alloc + state_supply);
-            state.bids[i].volume = bid_volume - state_supply;
-            state.supply = 0; // we could only partial fill, means supply is 0
-            break;
-        }
-    };
+    //// process/allocate outstanding bids, full or partial fill
+    state.bids.retain(|_, bid| {
+        if state.supply == 0 { return true; } // keep bid
+            let bid_user = bid.user.clone();
+            // full fill   : state.supply = 60, buy: 50 => supply: 10, bid: 50
+            if state.supply >= bid.volume { // full fill and remove bid
+                let &alloc = state.allocations.get(&bid_user).unwrap_or(&0);
+                state.allocations.insert(bid_user.clone(), alloc + bid.volume);
+                state.supply -= bid.volume;
+                false // bid fully processed, remove bid
+            // partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
+            } else { // partial fill and retain/keep bid
+                let state_supply = state.supply;
+                let &alloc = state.allocations.get(&bid_user).unwrap_or(&0);
+                state.allocations.insert(bid_user, alloc + state_supply);
+                bid.volume -= state_supply;
+                state.supply = 0; // we could only partial fill, means supply is 0
+                true
+            }
+    });
 
     let total_alloc: u64 = state.allocations.values().sum();
     dbg!(total_alloc);
@@ -238,7 +245,7 @@ async fn allocation(
 /// show full app state
 async fn index(app_state: web::Data<AppState>) -> String {
     println!("-- thread: {:?}", std::thread::current().id());
-    format!("state: {:?}\n", app_state.inner.lock().unwrap())
+    format!("state: {:#?}\n", app_state.inner.lock().unwrap())
 }
 
 //// ----- Middleware
@@ -290,7 +297,6 @@ async fn main() -> std::io::Result<()> {
     println!("Server was shut-down");
     std::io::Result::Ok(())
 }
-
 
 mod http_tests {
 
@@ -384,7 +390,10 @@ mod http_tests {
 
         //// bid
         // (u2 still open for 50)
-        assert_eq!(state.inner.lock().unwrap().bids[0].volume, 50);
+        assert_eq!(
+            state.inner.lock().unwrap().bids.values().next().unwrap().volume,
+            50
+        );
     }
 
     #[actix_web::test]
@@ -424,6 +433,7 @@ mod http_tests {
 }
 
 //// -----------  Concurrency Tests
+
 #[cfg(test)]
 mod concurrency_tests {
     use std::collections::HashSet;
@@ -452,15 +462,15 @@ mod concurrency_tests {
         let state = state.inner.lock().unwrap();
 
         // 1. assert no same seq numbers
-        let unique: HashSet<_> = state.bids.iter().map(|b| b.seq).collect();
+        let unique: HashSet<_> = state.bids.values().map(|b| b.seq).collect();
         assert_eq!(state.bids.len(), unique.len());
 
-        // 2. assert ordering of same price bids
-        assert_eq!(state.bids.last().unwrap().seq, 1);
+        // 2. assert ordering of same price bids - smallest seq no is first elem
+        assert_eq!(state.bids.values().next().unwrap().seq, 1);
         // or
         // check two elem windows
-        let seqs = state.bids.iter().map(|b| b.seq).collect::<Vec<u64>>();
-        assert!( seqs.windows(2).all(|w| w[0] > w[1]) );
+        let seqs = state.bids.values().map(|b| b.seq).collect::<Vec<u64>>();
+        assert!( seqs.windows(2).all(|w| w[1] > w[0]) );
     }
 
     /// Buys and sells, check allocations + remaining supply = initial supply
@@ -710,8 +720,8 @@ mod unit_tests {
         assert_eq!(state.allocations.get("u3").unwrap(), &50);
         assert_eq!(state.allocations.get("u1").unwrap(), &100);
         assert_eq!(state.allocations.get("u2").unwrap(), &100);
-        let u2 = state.bids.iter().find(|bid| bid.user == "u2").unwrap();
-        assert_eq!(u2.volume, 50);
+        let u2_bid = state.bids.get(&price_seq_pair(2, 2)).unwrap();
+        assert_eq!(u2_bid.volume, 50);
     }
 
     #[test]
@@ -748,7 +758,9 @@ mod unit_tests {
         // 2. allocate outstanding bids
         // case: full fill - state.supply = 60, buy: 50 => supply: 10, bid: 50
         let mut state = AppStateImpl { 
-            bids: vec![ Bid::new("u1", 200, 2, 1) ],
+            bids: BTreeMap::from([
+                ( price_seq_pair(2, 1), Bid::new("u1", 200, 2, 1) ) 
+            ]),
             ..Default::default()
         };
         sell_impl(&mut state, SellRequest { volume: 300 });
@@ -757,15 +769,18 @@ mod unit_tests {
         assert!(state.bids.is_empty());
         // case: partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         let mut state = AppStateImpl { 
-            bids: vec![ Bid::new("u1", 100, 2, 1) ],
+            bids: BTreeMap::from([
+                ( price_seq_pair(2, 1), Bid::new("u1", 100, 2, 1) ) 
+            ]),
             ..Default::default()
         };
         sell_impl(&mut state, SellRequest { volume: 50 });
         assert_eq!(state.allocations.get("u1").unwrap(), &50);
         assert_eq!(state.supply, 0);
-        assert_eq!(state.bids[0].user, "u1");
-        assert_eq!(state.bids[0].volume, 50);
-        assert_eq!(state.bids[0].price, 2);
+        let u1_bid = state.bids.get(&price_seq_pair(2, 1)).unwrap();
+        assert_eq!(u1_bid.user, "u1");
+        assert_eq!(u1_bid.volume, 50);
+        assert_eq!(u1_bid.price, 2);
     }
 
     #[test]
@@ -786,9 +801,10 @@ mod unit_tests {
         assert_eq!(state.supply, 0);
         assert_eq!(state.allocations.get("u1").unwrap(), &50);
         assert_eq!(state.bids.len(), 1);
-        assert_eq!(state.bids[0].volume, 50);
-        assert_eq!(state.bids[0].price, 2);
-        assert_eq!(state.bids[0].seq, 1);
+        let u1_bid = state.bids.get(&price_seq_pair(2, 1)).unwrap();
+        assert_eq!(u1_bid.volume, 50);
+        assert_eq!(u1_bid.price, 2);
+        assert_eq!(u1_bid.seq, 1);
 
         //// 2. otherwise, store req into bids
         let mut state = AppStateImpl::default();
@@ -797,23 +813,26 @@ mod unit_tests {
         buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
         assert_eq!(state.request_no, 1);
         assert_eq!(state.bids.len(), 1);
-        assert_eq!(state.bids[0].volume, 100);
-        assert_eq!(state.bids[0].price, 2);
-        assert_eq!(state.bids[0].seq, 1);
+        let u1_bid = state.bids.get(&price_seq_pair(2, 1)).unwrap();
+        assert_eq!(u1_bid.volume, 100);
+        assert_eq!(u1_bid.price, 2);
+        assert_eq!(u1_bid.seq, 1);
         // case: earlier bids at the same price fill first
         buy_impl(&mut state, BuyRequest::new("u2", 100, 2));
         assert_eq!(state.request_no, 2);
         assert_eq!(state.bids.len(), 2);
-        assert_eq!(state.bids[0].volume, 100);
-        assert_eq!(state.bids[0].price, 2);
-        assert_eq!(state.bids[0].seq, 2);
-        assert_eq!(state.bids[1].user, "u1");  // u1 bid first
-        assert_eq!(state.bids[1].seq, 1);
+        let u2_bid = state.bids.get(&price_seq_pair(2, 2)).unwrap();
+        assert_eq!(u2_bid.volume, 100);
+        assert_eq!(u2_bid.price, 2);
+        assert_eq!(u2_bid.seq, 2);
+        let u1_bid = state.bids.get(&price_seq_pair(2, 1)).unwrap();
+        assert_eq!(u1_bid.user, "u1");  // u1 bid first
+        assert_eq!(u1_bid.seq, 1);
         // case: highest price always wins
         buy_impl(&mut state, BuyRequest::new("u3", 100, 3));
         assert_eq!(state.request_no, 3);
         assert_eq!(state.bids.len(), 3);
-        assert_eq!(state.bids.last().unwrap().user, "u3");
+        assert_eq!(state.bids.values().next().unwrap().user, "u3");
     }
 
     /// Higher price requests will be filled first
@@ -855,8 +874,10 @@ mod unit_tests {
         buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
         buy_impl(&mut state, BuyRequest::new("u1", 100, 2));
         assert_eq!(state.bids.len(), 2);
-        assert_eq!(state.bids[0].user, "u1");
-        assert_eq!(state.bids[1].user, "u1");
+        let bid_1 = state.bids.get(&price_seq_pair(2, 1)).unwrap();
+        let bid_2 = state.bids.get(&price_seq_pair(2, 2)).unwrap();
+        assert_eq!(bid_1.user, "u1");
+        assert_eq!(bid_2.user, "u1");
     }
 }
 
