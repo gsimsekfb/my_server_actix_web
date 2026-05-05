@@ -93,11 +93,9 @@ impl Bid {
 //// ----- Ordered Locks
 ////
 //// To avoid deadlock, the lock order must be the same in these fns 
-
-
-// todo: how to better enforce this order?
-// pre-commit hook ai check lock order for deadlock ?
-
+//// 
+//// Also: pre-commit hook ai check lock order for deadlock:
+//// see: src\tw_ai_pre_commit_hook.txt
 
 fn ordered_locks_buy(state: &AppState) -> 
     (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)

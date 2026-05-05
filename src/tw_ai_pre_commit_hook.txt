@@ -1,0 +1,33 @@
+Review this Rust diff for lock ordering violations. 
+Rule: supply must always be locked before bids. Any direct .lock() or .write() on these outside ordered_locks_* functions is a violation. Reply PASS or FAIL with reason. Your response must end with exactly the word PASS or FAIL and nothing else after it. 
+
+Diff:
+```
+fn ordered_locks_buy(state: &AppState) -> 
+    (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
+{
+    let supply = state.supply.lock().unwrap();
+    let bids = state.bids.write().unwrap();
+    (supply, bids)
+}
+fn ordered_locks_sell(state: &AppState) -> 
+    (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
+{
+    let supply = state.supply.lock().unwrap();
+    let bids = state.bids.write().unwrap();
+    (supply, bids)
+}
+
+fn ordered_locks_allocate(state: &AppState) -> 
+    (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
+{
+    let bids = state.bids.write().unwrap();
+    let supply = state.supply.lock().unwrap();
+   (bids, supply)
+} 
+```
+
+AI Response:
+`ordered_locks_allocate` acquires `bids` before `supply`, violating the rule that `supply` must always be locked first.
+
+FAIL
