@@ -57,7 +57,7 @@ struct AllocationQuery { username: String }
 
 #[derive(Default, Debug)]
 struct AppState {
-    request_no: AtomicU64, // todo: rename buy_seq_no?
+    buy_seq_no: AtomicU64, // buy sequence number
     supply: Mutex<u64>,                 // unallocated 
         // this could be Atomic, using Mutex to show lock order / deadlock topic
     allocations: DashMap<String, u64>,  // allocated 
@@ -133,7 +133,7 @@ async fn buy(
         // let mut bids = state.bids.write().unwrap();
 
     buy_impl(
-        &state.request_no,
+        &state.buy_seq_no,
         &mut supply,
         &state.allocations,
         &mut bids,
@@ -159,7 +159,7 @@ async fn buy(
 /// Big O: log N - btreemap insert
 /// 
 fn buy_impl(
-    request_no: &AtomicU64,
+    buy_seq_no: &AtomicU64,
     supply: &mut MutexGuard<u64>,
     allocations: &DashMap<String, u64>,
     bids: &mut BTreeMap<PriceSeqPair, Bid>, 
@@ -168,8 +168,8 @@ fn buy_impl(
     let BuyRequest {user, volume, price} = buy_req;
 
     // 0. Increment request_no
-    request_no.fetch_add(1, Ordering::Relaxed);
-    println!("-- Buy request #{request_no:?}");
+    buy_seq_no.fetch_add(1, Ordering::Relaxed);
+    println!("-- Buy sequence number: #{buy_seq_no:?}");
 
     //// 1. sell immediately if there is unused supply
     if **supply > 0  {
@@ -184,7 +184,7 @@ fn buy_impl(
             let state_supply = **supply;
             let current_alloc = *allocations.get(&user).as_deref().unwrap_or(&0);
             allocations.insert(user.clone(), current_alloc + state_supply);
-            let seq = request_no.load(Ordering::Relaxed);
+            let seq = buy_seq_no.load(Ordering::Relaxed);
             bids.insert(
                 (Reverse(price), seq),
                 Bid::new(user, volume - state_supply, price, seq)
@@ -197,7 +197,7 @@ fn buy_impl(
     ////    - highest price bid at the end of bids vector
     ////    - same price bids, early bid stored at the end of bids vector 
     else {
-        let seq = request_no.load(Ordering::Relaxed);
+        let seq = buy_seq_no.load(Ordering::Relaxed);
         bids.insert(
             (Reverse(price), seq), 
             Bid::new(user, volume, price, seq)
@@ -370,7 +370,7 @@ mod tests_lib {
     pub fn buy_impl_for_test(state: &AppState, buy_req: BuyRequest) {
         let (mut supply, mut bids) = ordered_locks_buy(state);
         buy_impl(
-            &state.request_no,
+            &state.buy_seq_no,
             &mut supply,
             &state.allocations,
             &mut bids,
@@ -882,14 +882,14 @@ mod unit_tests {
         // full fill
         let state = AppState { supply: Mutex::new(200), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
-        assert_eq!(state.request_no.load(Ordering::Relaxed), 1);
+        assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 1);
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &200);
         assert_eq!(*state.supply.lock().unwrap(), 0);
 
         // partial fill
         let state = AppState { supply: Mutex::new(50), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", 100, 2));
-        assert_eq!(state.request_no.load(Ordering::Relaxed), 1);
+        assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 1);
         assert_eq!(*state.supply.lock().unwrap(), 0);
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &50);
         let bids = state.bids.read().unwrap();
@@ -905,7 +905,7 @@ mod unit_tests {
 
         // case: basic first bid 
         buy_impl_for_test(&state, BuyRequest::new("u1", 100, 2));
-        assert_eq!(state.request_no.load(Ordering::Relaxed), 1);
+        assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 1);
         let bids = state.bids.read().unwrap();
         assert_eq!(bids.len(), 1);
         let u1_bid = bids.get(&price_seq_pair(2, 1)).unwrap();
@@ -916,7 +916,7 @@ mod unit_tests {
                     // buy_impl_for_test will try to lock bids
         // case: earlier bids at the same price fill first
         buy_impl_for_test(&state, BuyRequest::new("u2", 100, 2));
-        assert_eq!(state.request_no.load(Ordering::Relaxed), 2);
+        assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 2);
         let bids = state.bids.read().unwrap();
         assert_eq!(bids.len(), 2);
         let u2_bid = bids.get(&price_seq_pair(2, 2)).unwrap();
@@ -929,7 +929,7 @@ mod unit_tests {
         drop(bids);
         // case: highest price always wins
         buy_impl_for_test(&state, BuyRequest::new("u3", 100, 3));
-        assert_eq!(state.request_no.load(Ordering::Relaxed), 3);
+        assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 3);
         let bids = state.bids.read().unwrap();
         assert_eq!(bids.len(), 3);
         assert_eq!(bids.values().next().unwrap().user, "u3");
@@ -942,8 +942,16 @@ mod unit_tests {
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
         buy_impl_for_test(&state, BuyRequest::new("u2", 200, 4));
         buy_impl_for_test(&state, BuyRequest::new("u3", 200, 10));
-        sell_impl_for_test(&state, SellRequest { volume: 300 });
-        // todo
+
+        sell_impl_for_test(&state, SellRequest { volume: 200 });
+        assert_eq!(state.allocations.get("u3").as_deref().unwrap(), &200);
+        assert_eq!(state.allocations.get("u2").as_deref(), None);
+        assert_eq!(state.allocations.get("u1").as_deref(), None);
+        
+        sell_impl_for_test(&state, SellRequest { volume: 200 });
+        assert_eq!(state.allocations.get("u3").as_deref().unwrap(), &200);
+        assert_eq!(state.allocations.get("u2").as_deref().unwrap(), &200);
+        assert_eq!(state.allocations.get("u1").as_deref(), None);
     }
 
     /// Same user buys twice
