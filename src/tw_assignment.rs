@@ -294,7 +294,7 @@ async fn allocation(
     state: web::Data<AppState>, 
     req: web::Query<AllocationQuery>
 ) -> Result<String> {
-    let res = allocation_impl(&state.allocations, req.0.clone());
+    let res = allocation_impl(&state.allocations, req.0);
     if let Ok(alloc) = res {
         Ok(alloc.to_string())
         // Debug:        
@@ -360,6 +360,7 @@ async fn main() -> std::io::Result<()> {
     std::io::Result::Ok(())
 }
 
+#[cfg(test)]
 mod tests_lib {
     use actix_web::{http::StatusCode, test, test::TestRequest};
 
