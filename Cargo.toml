@@ -26,7 +26,7 @@ four_forward_slashes = "allow"
 
 [[bin]]
 name = "twin"
-path = "src/tw_assignment.rs"
+path = "src/tw_main.rs"
 
 # [[bin]]
 # name = "main"
