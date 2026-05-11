@@ -1,36 +1,35 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 use actix_web::{
     App, Error, HttpServer, Responder, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, 
     post, Result, web
 };
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use core::alloc;
-use std::{cmp::Reverse, collections::{BTreeMap, HashMap}, sync::{Mutex, MutexGuard, RwLock, RwLockWriteGuard, atomic::{AtomicU64, Ordering}}};
+use std::{
+    cmp::Reverse, collections::BTreeMap, 
+    sync::{
+        Mutex, MutexGuard, RwLock, RwLockWriteGuard, atomic::{AtomicU64, Ordering}
+    }
+};
 
 /// Topics
-/// 1. Lock order - deadlock prevention 
-
-
-/* Cheatsheet
-.
-watchexec -e rs -r -- cargo run --bin main
-watchexec -e rs -r -- cargo run --bin main --release
-set RUST_LOG=actix_web=debug && watchexec -e rs -r -- cargo run --bin main --release
-
-curl -s -X POST localhost:8080
-curl -is -X POST localhost:8080
-curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"volume\":250}"
-.
-*/
+/// 1. Lock order - deadlock prevention enforced with fns and with AI pre-commit hook
+///    - see ordered_locks_*() fns
+///    - see tw_ai_pre_commit_hook.txt
+/// 2. Full separation between HTTP layer and business logic 
+///    - See buy and buy_impl fns
+/// 3. Granular per AppState field locks vs one Mutex for all AppState designs
+///    - See commit: "tw: Using lock/lockfree per AppState field instead of one 
+///      Mutex for all AppState"
+/// 4. Using Vec (manual sort) vs BTreeMap (auto sort) for sorted bids
+///
+/// See tw__readme.md for more
 
 //// ------ Requests
 
 #[derive(Deserialize, Serialize)]
 struct BuyRequest { user: String, volume: u64, price: u64, }
-impl BuyRequest { 
+#[cfg(test)]
+impl BuyRequest {
     fn new(user: impl ToString, volume: u64, price: u64) -> Self {
         BuyRequest { user: user.to_string(), volume, price }
     }
@@ -77,10 +76,12 @@ struct AppState {
 
 type PriceSeqPair = (Reverse<u64>, u64);
 
+#[cfg(test)]
 fn price_seq_pair(price: u64, seq: u64) -> (Reverse<u64>, u64) {
     (Reverse(price), seq)
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct Bid { user: String, volume: u64, price: u64, seq: u64, }
 impl Bid { 
@@ -94,8 +95,8 @@ impl Bid {
 ////
 //// To avoid deadlock, the lock order must be the same in these fns 
 //// 
-//// Also: pre-commit hook ai check lock order for deadlock:
-//// see: src\tw_ai_pre_commit_hook.txt
+//// Also see: pre-commit hook ai check lock order for deadlock:
+//// src\tw_ai_pre_commit_hook.txt
 
 fn ordered_locks_buy(state: &AppState) -> 
     (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
@@ -305,7 +306,7 @@ async fn allocation(
     }
 }
 
-/// show full app state
+/// debug: show full app state
 async fn index(app_state: web::Data<AppState>) -> String {
     println!("-- thread: {:?}", std::thread::current().id());
     format!("state: {:#?}\n", app_state)
@@ -314,7 +315,7 @@ async fn index(app_state: web::Data<AppState>) -> String {
 
 //// ----- Middleware
 
-/// not functional for now
+/// todo: not functional for now
 async fn my_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
@@ -362,10 +363,10 @@ async fn main() -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests_lib {
-    use actix_web::{http::StatusCode, test, test::TestRequest};
 
     use super::*;
 
+    // Helper fn
     pub fn buy_impl_for_test(state: &AppState, buy_req: BuyRequest) {
         let (mut supply, mut bids) = ordered_locks_buy(state);
         buy_impl(
@@ -377,6 +378,7 @@ mod tests_lib {
         );
     }
 
+    // Helper fn
     pub fn sell_impl_for_test(state: &AppState, sell_req: SellRequest) {
         let (mut supply, mut bids) = ordered_locks_sell(state);
         sell_impl(
@@ -390,16 +392,20 @@ mod tests_lib {
 }
 
 
+//// -----------  Integration tests using HTTP layer
+
+#[cfg(test)]
 mod http_tests {
 
     use actix_web::{http::StatusCode, test, test::TestRequest};
-
     use super::*;
 
+    // Helper
     fn test_buy_request(req: BuyRequest) -> actix_http::Request {
         TestRequest::post().uri("/buy").set_json(req).to_request()
     }
 
+    //Helper
     fn test_sell_request(req: SellRequest) -> actix_http::Request {
         TestRequest::post().uri("/sell").set_json(req).to_request()
     }
@@ -523,6 +529,7 @@ mod http_tests {
     }
 }
 
+
 //// -----------  Concurrency Tests
 
 #[cfg(test)]
@@ -597,6 +604,7 @@ mod concurrency_tests {
     }
 
     /// claude ai
+    /// Buys and sells, check allocations + remaining supply = initial supply
     #[tokio::test]
     async fn buys_no_oversell_v2() {
         let state = web::Data::new(AppState::default());
@@ -618,6 +626,7 @@ mod concurrency_tests {
         assert_eq!(total_alloc + *state.supply.lock().unwrap(), 500);
     }
 
+    /// Buys and sells, check allocations + remaining supply = initial supply
     #[tokio::test]
     async fn buys_no_oversell() {
         let total_supply = 500;
@@ -654,10 +663,40 @@ mod property_tests {
  
     proptest! {
 
+
+    #[test]
+    fn allocation_monotonically_increases(
+        supplies in prop::collection::vec(1u64..10_000, 1..10),
+            // 1–10 random elements, each between 1 and 10_000. 
+            // e.g. [500, 3200, 77] or [9999] or [1, 200, 50, 8000]
+        bids in prop::collection::vec((1u64..10_000, 1u64..100), 1..10),
+            // e.g. [(100, 3), (5000, 7), (200, 1)], each tuple (volume, price)
+    ) {
+        let state = AppState::default();
+        let mut prev_alloc = 0u64;
+
+        // each time: 
+        // - buy() : u1 bids
+        // - sell(): supply becomes available, u1 gets allocation  
+        // e.g.
+        // bids    : [(100, 3), (5000, 7), (200, 1)], each tuple (volume, price)
+        // supplies: [9999] 
+        //
+        for (volume, price) in bids {
+            buy_impl_for_test(&state, BuyRequest::new("u1", volume, price));
+            for supply in &supplies {
+                sell_impl_for_test(&state, SellRequest { volume: *supply });
+            }
+            let alloc = *state.allocations.get("u1").as_deref().unwrap_or(&0);
+            prop_assert!(alloc >= prev_alloc); // never decreases
+            prev_alloc = alloc;
+        }
+    }
+
     /// supply added via /sell = total allocated + remaining supply 
     #[test]
     fn supply_conservation(
-        // e.g. vec![1, 100, 5]
+        // e.g. vec![1, 100, 5], vec![5, 9_000]
         supplies in prop::collection::vec(1u64..10_000, 1..10),
         // bid: (volume, price), e.g. vec![(100,1), (50,4)]
         bids in prop::collection::vec( (1u64..1_000, 1u64..100), 1..10 ),
@@ -745,38 +784,8 @@ mod property_tests {
         prop_assert!(!bids.is_empty()); // remainder stays open
     }
 
-    #[test]
-    fn allocation_monotonically_increases(
-        supplies in prop::collection::vec(1u64..10_000, 1..10),
-            // 1–10 random elements, each between 1 and 10_000. 
-            // e.g. [500, 3200, 77] or [9999] or [1, 200, 50, 8000]
-        bids in prop::collection::vec((1u64..10_000, 1u64..100), 1..10),
-            // e.g. [(100, 3), (5000, 7), (200, 1)], each tuple (volume, price)
-    ) {
-        let state = AppState::default();
-        let mut prev_alloc = 0u64;
-
-        // each time: 
-        // - buy() : u1 bids
-        // - sell(): supply becomes available, u1 gets allocation  
-        // e.g.
-        // bids    : [(100, 3), (5000, 7), (200, 1)], each tuple (volume, price)
-        // supplies: [9999] 
-        //
-        for (volume, price) in bids {
-            buy_impl_for_test(&state, BuyRequest::new("u1", volume, price));
-            for supply in &supplies {
-                sell_impl_for_test(&state, SellRequest { volume: *supply });
-            }
-            let alloc = *state.allocations.get("u1").as_deref().unwrap_or(&0);
-            prop_assert!(alloc >= prev_alloc); // never decreases
-            prev_alloc = alloc;
-        }
-    }
-
     } // end of macro proptest!
 }
-
 
 
 //// -----------  Unit Tests
@@ -789,7 +798,7 @@ mod unit_tests {
 
     use tests_lib::*;
 
-    // Example
+    // Example from main spec. doc.
     //     Events:
     //
     //     t1: u1 bids 100 @ 3
