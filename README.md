@@ -6,8 +6,6 @@ This is an educational library with working self-contained examples with lots of
 **Main topic:**  
 backend fundamentals using actix_web 
 
-> [main_0_hello_template.rs](src/main_0_hello_template.rs)  
-> [main_1_hello.rs](src/main_1_hello.rs)  
 > [main_2_app_state_simple.rs](src/main_2_app_state_simple.rs)  
 > [main_3_app_state_mutable_global.rs](src/main_3_app_state_mutable_global.rs)  
 > [main_4_1_extractors_path.rs](src/main_4_1_extractors_path.rs)  
@@ -41,8 +39,8 @@ Each main shows a fundamental architecture or some basic concepts.
 
 How to run each main file:
 ```
-cargo r --bin main_1
-cargo r --bin main_4_3
+cargo r --bin main_2
+cargo r --bin main_4_1
 ...
 ```
 see more "bins" in Cargo.toml
