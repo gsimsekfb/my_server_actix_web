@@ -27,16 +27,16 @@ use std::{
 //// ------ Requests
 
 #[derive(Deserialize, Serialize)]
-struct BuyRequest { user: String, volume: u64, price: u64, }
-#[cfg(test)]
+pub struct BuyRequest { user: String, volume: u64, price: u64, }
+
 impl BuyRequest {
-    fn new(user: impl ToString, volume: u64, price: u64) -> Self {
+    pub fn new(user: impl ToString, volume: u64, price: u64) -> Self {
         BuyRequest { user: user.to_string(), volume, price }
     }
 }
 
 #[derive(Deserialize, Serialize)]
-struct SellRequest { volume: u64, }
+pub struct SellRequest { pub volume: u64, }
 
 #[derive(Clone, Deserialize)]
 struct AllocationQuery { username: String }
@@ -55,11 +55,11 @@ struct AllocationQuery { username: String }
 //// ----- App State
 
 #[derive(Default, Debug)]
-struct AppState {
-    buy_seq_no: AtomicU64, // buy sequence number
+pub struct AppState {
+    pub buy_seq_no: AtomicU64, // buy sequence number
     supply: Mutex<u64>,                 // unallocated 
         // this could be Atomic, using Mutex to show lock order / deadlock topic
-    allocations: DashMap<String, u64>,  // allocated 
+    pub allocations: DashMap<String, u64>,  // allocated 
         // DashMap: lock-free concurrent HashMap which uses Mutex sharding
     // Highest price top element. For same price bids, smaller seq on top
     // (Reverse(price), seq)
@@ -83,7 +83,7 @@ fn price_seq_pair(price: u64, seq: u64) -> (Reverse<u64>, u64) {
 
 #[allow(unused)]
 #[derive(Debug)]
-struct Bid { user: String, volume: u64, price: u64, seq: u64, }
+pub struct Bid { user: String, volume: u64, price: u64, seq: u64, }
 impl Bid { 
     fn new(user: impl Into<String>, volume: u64, price: u64, seq: u64) -> Self { 
         Self { user: user.into(), volume, price, seq} 
@@ -98,7 +98,7 @@ impl Bid {
 //// Also see: pre-commit hook ai check lock order for deadlock:
 //// src\tw_ai_pre_commit_hook.txt
 
-fn ordered_locks_buy(state: &AppState) -> 
+pub fn ordered_locks_buy(state: &AppState) -> 
     (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
 {
     let supply = state.supply.lock().unwrap();
@@ -106,7 +106,7 @@ fn ordered_locks_buy(state: &AppState) ->
     (supply, bids)
 }
 
-fn ordered_locks_sell(state: &AppState) -> 
+pub fn ordered_locks_sell(state: &AppState) -> 
     (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
 {
     let supply = state.supply.lock().unwrap();
@@ -157,7 +157,7 @@ async fn buy(
 /// 
 /// Big O: log N - btreemap insert
 /// 
-fn buy_impl(
+pub fn buy_impl(
     buy_seq_no: &AtomicU64,
     supply: &mut MutexGuard<u64>,
     allocations: &DashMap<String, u64>,
@@ -168,7 +168,7 @@ fn buy_impl(
 
     // 0. Increment request_no
     buy_seq_no.fetch_add(1, Ordering::Relaxed);
-    println!("-- Buy sequence number: #{buy_seq_no:?}");
+    // println!("-- Buy sequence number: #{buy_seq_no:?}");
 
     //// 1. sell immediately if there is unused supply
     if **supply > 0  {
@@ -233,7 +233,7 @@ async fn sell(
 ///
 ///    Big O: N - retain will visit every elem (those returns are like breaks)
 ///
-fn sell_impl( 
+pub fn sell_impl( 
     supply: &mut MutexGuard<u64>,
     allocations: &DashMap<String, u64>,
     bids: &mut BTreeMap<PriceSeqPair, Bid>, 
@@ -262,8 +262,8 @@ fn sell_impl(
         }
     });
 
-    let total_alloc: u64 = allocations.iter().map(|e| *e).sum();
-    dbg!(total_alloc);
+    let _total_alloc: u64 = allocations.iter().map(|e| *e).sum();
+    // dbg!(_total_alloc);
 }
 
 /// Behavior: return the integer total VM-hours allocated to u1 so far.
@@ -362,7 +362,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests_lib {
+pub mod tests_lib {
 
     use super::*;
 
