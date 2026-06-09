@@ -16,11 +16,13 @@ Since we are optimizing specific operations like `retain` vs `pop_first` on a `B
 
 #### Implementation:
 
+Note: The following is for "the first version" of `sell_impl`, also see the bench fn for `buy_impl` in the same file.
+
 A sample **Criterion** benchmark `benches/allocation.rs` measures how long `sell_impl` takes to allocate all outstanding bids as the number of bids scales from 1K to 100K.
 
 Run it with:
 ```rust
-cargo bench --bench allocation
+cargo bench --bench allocation -- sell_impl
 ```
 
 ```rust
