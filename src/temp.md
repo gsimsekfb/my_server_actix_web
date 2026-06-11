@@ -1,12 +1,38 @@
-| Category | Library / Project Idea | Language | Why It's a Gap / In Demand | Your Advantage |
-| :--- | :--- | :--- | :--- | :--- |
-| **Cryptographically Verifiable Compute** | Unified ZK Prover Library (e.g., generalize **Proof of SQL** pattern) | Rust | No single library provides ZK proofs for arbitrary SQL/query results across all domains, critical for trustless Web3, verifiable AI, and tamper-proof databases. | Directly leverages your ZK experience with Stark/libra and Rust performance skills for low-level proving systems. |
-| **Universal Data Query** | Mature Multi-Model Query Engine (e.g., build on **Trustfall**) | Rust | A mature, embeddable engine that can query REST, GraphQL, SQL, NoSQL, and blockchain state uniformly is missing; Trustfall is nascent. | Demonstrates your database internals, distributed systems, and API design expertise across all target domains. |
-| **Cross-Domain Identity & Access** | Unified Auth Library (e.g., **Nythos** or **Rauthy** successor) | Rust | No single, embeddable library handles OAuth2, OIDC, Web3 wallets (SIWE), and API keys for AI agents and databases. | Your blockchain and C++ background translates directly to building secure, high-performance authentication infrastructure. |
-| **Policy-as-Code Engine** | Embeddable, High-Perf Policy Engine (e.g., **Cedar** but faster/simpler) | Rust | AWS Cedar exists but is not optimized for embedded, high-throughput use in databases, Web3 nodes, and AI pipelines. | Your systems-level Rust and C++ experience is ideal for a zero-dependency, low-latency policy evaluation library. |
-| **Data Lineage & Provenance** | Open Source Data Trust Platform (e.g., build on **Rocky** or **TIBET Cortex**) | Rust | Column-level lineage with cryptographic provenance is fragmented; essential for AI model governance, DeFi, and data warehousing. | Your blockchain (immutability) and database experience aligns perfectly with versioned, verifiable data infrastructure. |
-| **Embedded Multi-Model Database Core** | Lightweight DB Engine (e.g., compile **SurrealDB** or **CameoDB** as a pure library) | Rust | Full-featured multi-model databases are heavy; a stripped-down, embeddable core for edge AI and Web3 nodes is missing. | Showcases your deep C++ (Robomongo) and Rust skills by building a highly portable, low-overhead storage engine. |
-| **Structured Streaming & ETL** | Universal Data Stream Processor (e.g., **Substreams** generalized pattern) | Rust | Substreams is Web3-specific; a general-purpose Rust library for streaming transformations between DB, AI, and Web2 sinks is needed. | Your distributed systems and libp2p experience directly applies to building a high-performance, federated streaming engine. |
-| **Unified Observability Core** | Single-Binary OTEL Ingestion & AI Eval (e.g., **Laminar** or **Scouter** core) | Rust | Observability for LLM apps combined with traditional metrics is immature; a single Rust binary replacing complex stacks is a massive gap. | Your Prometheus, metrics, and systems-level Rust background is a direct match for high-throughput telemetry collection. |
-| **Distributed Compute Fabric** | General-Purpose Work Distribution (e.g., **Repartir** with broader DB/Web3 adapters) | Rust | Distributed execution across CPU/GPU is fragmented; a library uniting AI training, Web3 ZK proving, and DB query executors is absent. | Leverages your blockchain consensus, peer-to-peer, and high-performance computing experience uniquely. |
-| **Cross-Domain AI Agent SDK** | Universal Agent Framework Core (e.g., **OramaCore** but purely embeddable) | Rust | Agent frameworks are platform-specific; a core Rust SDK with pluggable memory (vector/graph), tools, and crypto identity is missing. | Monetizes your full-stack Rust, ML, and Web3 knowledge into a foundational library for the agent economy. |
+## Simplest First Load Test: Throughput & Latency Under Concurrency Sweep
+
+**One test, one question:** *"How does my server's latency change as I increase concurrent connections?"*
+
+Run the **same endpoint** at increasing concurrency levels (e.g., 1 → 10 → 50 → 100 → 500) and record **requests/sec** and **p99 latency** at each level. That's it.
+
+**Why this one first:**
+- It immediately reveals your **saturation point** — where latency starts bending upward
+- It catches the biggest problems: lock contention, thread pool exhaustion, backpressure failures
+- It requires zero scripting — a single CLI command per level
+
+**Example with `hey`** (simplest tool to install and use):
+
+```bash
+# 10 concurrent connections, 10 seconds, unlimited requests.
+hey -c 10 -z 10s http://localhost:8080/your_endpoint
+
+# 100 concurrent connections, 10 seconds, unlimited requests.
+hey -c 100 -z 10s http://localhost:8080/your_endpoint
+
+# 500 concurrent connections, 10 seconds, unlimited requests.
+hey -c 500 -z 10s http://localhost:8080/your_endpoint
+```
+
+**What to look at in the output:**
+```
+Requests/sec:   12345.67       ← throughput
+Latency distribution:
+  50% in 0.8ms                 ← median
+  99% in 4.2ms                 ← tail latency (the important one)
+```
+
+**You've found something interesting when:**
+- p99 is **10x+ higher** than p50 → contention somewhere
+- Throughput **plateaus or drops** as you add connections → you've hit the ceiling
+- Any **errors appear** → something is breaking under load
+
+That's your V1. Everything else (constant-rate testing, realistic payloads, sustained soak tests) builds on top of this baseline.

@@ -6,6 +6,7 @@
 | **Micro-bench** | **Criterion** | `buy_impl` algorithmic efficiency | Every PR |
 | **Load Test** | **Drill / wrk** | Lock contention & RPS | Release candidates |
 | **Profiling** | **Flamegraph** | CPU "Hot paths" | During optimization |
+| **Soak Test** | **Drill / wrk** | Memory leaks & resource exhaustion | Pre-release (hours) |
 
 
 
@@ -77,10 +78,114 @@ Linear scaling — roughly O(n):
 Once the algorithm is fast, we must test the **lock contention** in Axum handlers under high load. Use a tool like **Drill** or **Goku**, which are written in Rust for high-throughput benchmarking.
 *   **The Goal:** Measure how many Requests Per Second (RPS) `buy` handler can process before the fine-grained locks cause latency spikes (P99s).
 *   **Metric to Watch:** **Tail Latency.** In financial systems, the average latency is often a "lie"; we care about the P99 or P99.9—the worst-case delay experienced by users.
+  
+
+**What to look at in the output:**
+```
+Requests/sec:   12345.67       ← throughput
+Latency distribution:
+  50% in 0.8ms                 ← median
+  99% in 4.2ms                 ← tail latency (the important one)
+```
+
+**You've found something interesting when:**
+- p99 is **10x+ higher** than p50 → contention somewhere
+- Throughput **plateaus or drops** as you add connections → you've hit the ceiling
+- Any **errors appear** → something is breaking under load
+
+
+#### The test
+``` 
+# 10 concurrent connections, 10 secs, unlimited requests to find the throughput ceiling
+wsl$ 
+hey -c 10 -z 10s -m POST \ 
+  -d '{"user":"u1","volume":10,"price":3}' \ 
+  -H "Content-Type: application/json" http://localhost:8080/buy
+
+Summary:
+  Total:        10.0078 secs
+  Slowest:      0.0293 secs
+  Fastest:      0.0004 secs
+  Average:      0.0025 secs
+  Requests/sec: 4006.1798  // throughput
+
+  Total data:   12177166 bytes
+  Size/request: 303 bytes
+
+Response time histogram:
+  0.000 [1]     |
+  0.003 [30240] |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.006 [8505]  |■■■■■■■■■■■
+  0.009 [993]   |■
+  0.012 [197]   |
+  0.015 [108]   |
+  0.018 [19]    |
+  0.021 [8]     |
+  0.024 [13]    |
+  0.026 [5]     |
+  0.029 [4]     |
+
+Latency distribution:
+  10% in 0.0009 secs
+  25% in 0.0010 secs
+  50% in 0.0023 secs  // median
+  75% in 0.0033 secs
+  90% in 0.0045 secs
+  95% in 0.0055 secs
+  99% in 0.0088 secs  // aka tail latency - most important
+    // P99: 99% of requests complete in 0.088 secs or less 
+
+Details (average, fastest, slowest):
+  DNS+dialup:   0.0000 secs, 0.0004 secs, 0.0293 secs
+  DNS-lookup:   0.0000 secs, 0.0000 secs, 0.0018 secs
+  req write:    0.0000 secs, 0.0000 secs, 0.0030 secs
+  resp wait:    0.0024 secs, 0.0003 secs, 0.0292 secs
+  resp read:    0.0001 secs, 0.0000 secs, 0.0104 secs
+
+Status code distribution:
+  [200] 40093 responses
+``` 
+
+
+**What to look at in the output:**
+```
+Requests/sec:   12345.67       ← throughput
+Latency distribution:
+  50% in 0.8ms                 ← median
+  99% in 4.2ms                 ← tail latency (the important one)
+```
+
+**You've found something interesting when:**
+- p99 is **10x+ higher** than p50 → contention somewhere
+- Throughput **plateaus or drops** as you add connections → you've hit the ceiling
+- Any **errors appear** → something is breaking under load
+
+That's your V1. Everything else (constant-rate testing, realistic payloads, sustained soak tests) builds on top of this baseline.
+
+
+#### Next:
+Run the **same endpoint** at increasing concurrency levels (e.g., 1 → 10 → 50 → 100 → 500) and record **requests/sec** and **p99 latency** at each level. That's it.
+
+```bash
+# 10 concurrent connections, 10 secs, unlimited requests (already done above)
+hey -c 10 -z 10s http://localhost:8080/endpoint
+
+# 100 concurrent connections, 10 secs, unlimited requests
+hey -c 100 -z 10s http://localhost:8080/endpoint
+
+# 500 concurrent connections, 10 secs, unlimited requests
+hey -c 500 -z 10s http://localhost:8080/endpoint
+```
+
 
 ### 3. Continuous Profiling (The "Visibility" Level)
 In production, we cannot always reproduce performance issues locally. Use **Flamegraphs** (via `cargo-flamegraph`) to visualize exactly where CPU time is being spent—whether it's inside the `BTreeMap` search or waiting for a `Mutex`.
 *   **The Goal:** Identify "hot paths" and locking bottlenecks visually.
 *   **Tooling:** Use the **Tracing** crate to instrument code. This allows we to collect timing data across `buy` and `buy_impl` boundary without stopping the service.
+
+### 4. Soak / Endurance Testing (The "Longevity" Level)
+The three categories above test peak performance, but production services run for days. A soak test runs **moderate, sustained load for hours** to surface issues that only appear over time.
+*   **The Goal:** Catch memory leaks, connection pool exhaustion, file-descriptor leaks, or gradual latency degradation that short burst tests miss.
+*   **Setup:** Run Drill/wrk at ~60-70% of max RPS for 2-4 hours; monitor RSS memory, open FDs, and P99 latency trends over time.
 
 ---
