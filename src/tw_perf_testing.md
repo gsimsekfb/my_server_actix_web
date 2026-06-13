@@ -1,3 +1,4 @@
+
 ## Performance Tests For Production
 
 ### Production Performance Pyramid
@@ -8,6 +9,14 @@
 | **Profiling** | **Flamegraph** | CPU "Hot paths" | During optimization |
 | **Soak Test** | **Drill / wrk** | Memory leaks & resource exhaustion | Pre-release (hours) |
 
+## Tests
+### [1. Micro-benchmarking](#1-micro-benchmarking-the-algorithm-level)
+### [2. HTTP Load Testing](#2-http-load-testing-the-system-level)
+### [3. Continuous Profiling](#3-continuous-profiling-the-visibility-level)
+### [4. Soak / Endurance Testing](#4-soak--endurance-testing-the-longevity-level)
+
+
+----------------------------------------------------------------------------
 
 
 ### 1. Micro-benchmarking (The "Algorithm" Level)
@@ -72,7 +81,9 @@ Linear scaling — roughly O(n):
 
 10x more bids → ~10x more time, confirms O(n) behavior of `retain`. But for 100K+ concurrent open bids we might want to bench with `pop_first` with early exit.
 
+[↑ Back to top](#tests)
 
+------------------
 
 ### 2. HTTP Load Testing (The "System" Level)
 Once the algorithm is fast, we must test the **lock contention** in Axum handlers under high load. Use a tool like **Drill** or **Goku**, which are written in Rust for high-throughput benchmarking.
@@ -98,9 +109,14 @@ Latency distribution:
 ``` 
 # 10 concurrent connections, 10 secs, unlimited requests to find the throughput ceiling
 wsl$ 
-hey -c 10 -z 10s -m POST \ 
-  -d '{"user":"u1","volume":10,"price":3}' \ 
-  -H "Content-Type: application/json" http://localhost:8080/buy
+hey -c 10 -z 10s -m POST \
+  -d '{"user":"u1","volume":10,"price":3}' \
+  -H "Content-Type: application/json" \
+  http://localhost:8080/buy
+
+// same cmd, one line
+hey -c 10 -z 10s -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
+
 
 Summary:
   Total:        10.0078 secs
@@ -177,15 +193,103 @@ hey -c 100 -z 10s http://localhost:8080/endpoint
 hey -c 500 -z 10s http://localhost:8080/endpoint
 ```
 
+[↑ Back to top](#tests)
+
+-----
+
 
 ### 3. Continuous Profiling (The "Visibility" Level)
 In production, we cannot always reproduce performance issues locally. Use **Flamegraphs** (via `cargo-flamegraph`) to visualize exactly where CPU time is being spent—whether it's inside the `BTreeMap` search or waiting for a `Mutex`.
 *   **The Goal:** Identify "hot paths" and locking bottlenecks visually.
 *   **Tooling:** Use the **Tracing** crate to instrument code. This allows we to collect timing data across `buy` and `buy_impl` boundary without stopping the service.
 
+**A. flamegraph** — run under load, generate flamegraph to see where CPU time goes:  
+**B. tracing spans** — add one span per handler to measure buy/sell time:
+
+These two together cover the most important visibility — flamegraph shows *where* time is spent, tracing shows *how long* each operation takes.  
+
+-----
+
+The minimal high-value approach tests in practice:
+
+**A. flamegraph** — run under load, generate flamegraph to see where CPU time goes:
+```bash
+cargo flamegraph --bin twin -- &
+hey -c 50 -z 10s ... 
+# flamegraph.svg generated automatically
+```
+
+#### The test:
+
+Using samply instead of flamegraph
+```bash
+# 1. Install
+cargo install samply
+
+# 2. Build with debug symbols
+CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release --bin twin
+
+# 3. Profile under load
+samply record ./target/release/twin
+# 10 concurrent connections, 10 secs, unlimited requests
+hey -c 10 -z 10s -m POST \
+  -d '{"user":"u1","volume":10,"price":3}' \
+  -H "Content-Type: application/json" \
+  http://localhost:8080/buy
+
+# 4. Open localhost:3000
+samply load profile.json.gz
+Local server listening at http://127.0.0.1:3000
+```
+
+**B. tracing spans** — add one span per handler to measure buy/sell time:
+```rust
+use tracing::instrument;
+
+#[instrument]
+fn buy_impl(...) { ... }
+```
+
+**The test:**
+
+i. add `#[instrument]` for `fn buy` and `fn buy_impl`
+
+ii. enable this line in main.rs
+```    
+    tracing_subscriber::fmt()
+        ...
+```
+
+iii. 
+```
+cargo r --bin twin
+
+# send buy request
+curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d "{\"user\":\"u1\",\"volume\":100,\"price\":3}"
+
+2026-06-13T10:08:19  INFO buy{req=Json(BuyRequest { user: "u1", volume: 100, price: 3 })}:buy_impl{buy_req=BuyRequest { user: "u1", volume: 100, price: 3 }}: twin: close time.busy=38.9µs time.idle=31.7µs
+
+2026-06-13T10:08:19  INFO buy{req=Json(BuyRequest { user: "u1", volume: 100, price: 3 })}: twin: close time.busy=476µs time.idle=33.3µs
+```
+
+Read the logs — look for `close` lines with `time.busy` and `time.idle` fields
+
+`time.busy` = actual CPU work  
+`time.idle` = time waiting (I/O, locks, awaits).
+
+
+**Test result:**   
+`buy_impl` takes ~25-47µs of actual CPU (`time.busy`), while the full `buy` handler takes ~430-604µs — the ~550µs difference is overhead from HTTP parsing, JSON deserialization, and lock acquisition (`time.idle` + framework overhead).
+
+----
+
+
+
 ### 4. Soak / Endurance Testing (The "Longevity" Level)
 The three categories above test peak performance, but production services run for days. A soak test runs **moderate, sustained load for hours** to surface issues that only appear over time.
 *   **The Goal:** Catch memory leaks, connection pool exhaustion, file-descriptor leaks, or gradual latency degradation that short burst tests miss.
 *   **Setup:** Run Drill/wrk at ~60-70% of max RPS for 2-4 hours; monitor RSS memory, open FDs, and P99 latency trends over time.
+
+[↑ Back to top](#tests)
 
 ---
