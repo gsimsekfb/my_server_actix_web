@@ -262,7 +262,7 @@ ii. enable this line in main.rs
 
 iii. 
 ```
-cargo r --bin twin
+cargo r --release --bin twin
 
 # send buy request
 curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d "{\"user\":\"u1\",\"volume\":100,\"price\":3}"
@@ -289,6 +289,44 @@ Read the logs — look for `close` lines with `time.busy` and `time.idle` fields
 The three categories above test peak performance, but production services run for days. A soak test runs **moderate, sustained load for hours** to surface issues that only appear over time.
 *   **The Goal:** Catch memory leaks, connection pool exhaustion, file-descriptor leaks, or gradual latency degradation that short burst tests miss.
 *   **Setup:** Run Drill/wrk at ~60-70% of max RPS for 2-4 hours; monitor RSS memory, open FDs, and P99 latency trends over time.
+
+#### The test
+Run `hey -c 30 -z 2h ...` at ~60% of your peak RPS, while periodically checking `ps aux` for memory growth and watching P99 latency for gradual increase.
+
+a. Prep: Find cmd for ~60% of your peak RPS
+
+e.g. try these cmds, check `Requests/sec: <number>`:  
+(or add/change `-q 2400`, keep `-c` high enough to sustain it)
+
+```bash
+hey -c 10  -z 10s -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
+
+hey -c 50  -z 10s -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
+
+hey -c 100 -z 10s -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
+
+hey -c 500 -z 10s -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
+```
+
+
+b. Test
+
+```bash
+# 1. Start server
+cargo run --bin twin --release
+
+# 2. Run sustained load (adjust -q or -c to ~60% of your peak RPS, 
+#    see section a above)
+hey -c 30 -q 2400 -z 2h -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
+
+# 3. Monitor memory every 5 minutes
+ps aux | grep twin
+
+# 4. Periodically drain bids to prevent unbounded growth
+curl -s -X POST -d '{"volume":999999999}' -H "Content-Type: application/json" http://localhost:8080/sell
+```
+
+
 
 [↑ Back to top](#tests)
 
