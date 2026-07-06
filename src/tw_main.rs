@@ -1,6 +1,5 @@
 use actix_web::{
-    App, Error, HttpServer, Responder, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, 
-    post, Result, web
+    App, Error, HttpRequest, HttpServer, Responder, Result, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, post, web
 };
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -11,6 +10,9 @@ use std::{
         Mutex, MutexGuard, RwLock, RwLockWriteGuard, atomic::{AtomicU64, Ordering}
     }
 };
+
+use super::tw_auth::decode_jwt;
+
 
 /// Topics
 /// 1. Lock order - deadlock prevention enforced with fns and with AI pre-commit hook
@@ -126,8 +128,34 @@ curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d
 #[post("/buy")]
 #[instrument(skip(state))]
 async fn buy(
-    state: web::Data<AppState>, req: web::Json<BuyRequest>
+    state: web::Data<AppState>,
+    req_http: HttpRequest,
+    req: web::Json<BuyRequest>
 ) -> impl Responder {
+
+    //// Pre API versioning workaround using JWT feature flag.
+    //// Assuming "new_allocation" JWT token flag, calls a new buy_impl.
+    //// See tw_api_versioning.md/.rs for more.
+    let token = req_http
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));    
+    
+    // let _ = dbg!(decode_jwt(token.unwrap()));
+    
+    let has_feature_new_alloc = token
+        .and_then(|t| decode_jwt(t).ok())
+        .map(|claims| claims.features.contains(&"new_allocation".to_string()))
+        .unwrap_or(false);
+
+    dbg!(has_feature_new_alloc);
+    if has_feature_new_alloc {
+        // buy_impl_new_alloc()
+    }
+
+
+    //// buy starts here
     let (mut supply, mut bids) = ordered_locks_buy(&state);
     // instead of:
         // let mut supply = state.supply.lock().unwrap();
@@ -142,9 +170,6 @@ async fn buy(
     );
 
     format!("\nstate: {state:#?}\n ")
-
-    // format!("{}: {alloc:?}\n", &user) + 
-    //     &format!("state: {state:#?}\n ")
 }
 
 /// Behavior: register bid; immediately allocate if leftover supply is available.
@@ -310,16 +335,30 @@ async fn allocation(
 }
 
 /// debug: show full app state
-async fn index(app_state: web::Data<AppState>) -> String {
+pub async fn index(app_state: web::Data<AppState>) -> String {
     println!("-- thread: {:?}", std::thread::current().id());
     format!("state: {:#?}\n", app_state)
+}
+
+/// See `fn buy` for the alternative "JWT token feature flag" - pre API 
+/// versioning solution.
+/// See more in `tw_api_versioning.md` 
+#[post("/v2/buy")]
+async fn buy_v2(
+    _state: web::Data<AppState>,
+    _req: web::Json<BuyRequest>
+) -> impl Responder {
+
+    // buy_impl_v2()
+
+    ">> server response: buy_v2".to_string()
 }
 
 
 //// ----- Middleware
 
 /// todo: not functional for now
-async fn my_middleware(
+pub async fn my_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
@@ -331,47 +370,6 @@ async fn my_middleware(
 
     // step-3. post-processing
     // ...
-}
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    println!("-- Server starting on localhost:8080 ...");
-    println!("-- main's thread: {:?}", std::thread::current().id());
-
-    //// DO NOT use both of them at the same time: 
-    // 1. simple logger
-    // env_logger::init();
-    // 2. for profiling w/ tracing spans - see tw_perf_testing.md for more
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("info".parse().unwrap())
-        )
-        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-        .init();
-
-    // web::Data<T> is struct Data<T>(Arc<T>)
-    let app_state = web::Data::new( AppState::default() );
-
-    // closure will be run per worker thread (at startup), default workers: 8
-    HttpServer::new(move || { // move app_state into the closure
-        App::new()
-            .wrap(Logger::default())
-            // clone for each worker thread
-            .app_data(app_state.clone()) // register the created data
-            .route("/", web::get().to(index))
-            .wrap(from_fn(my_middleware))
-            .service(sell)
-            .service(buy)
-            .service(allocation)
-    })
-    .workers(2) // to have a lite program
-    .bind(("127.0.0.1", 8080))?
-    .run()
-    .await?;
- 
-    println!("Server was shut-down");
-    std::io::Result::Ok(())
 }
 
 #[cfg(test)]
