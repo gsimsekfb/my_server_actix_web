@@ -1,0 +1,28 @@
+name: Run all tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install lld
+      run: sudo apt -y install lld
+    - name: Build all
+      run: cargo check --all # --verbose
+    - name: Build all targets
+      run: cargo check --all-targets # --verbose      
+    - name: Run all tests
+      run: cargo test --all # --verbose
+           # cargo t --all -- --nocapture
+           # cargo t -- traits --nocapture
