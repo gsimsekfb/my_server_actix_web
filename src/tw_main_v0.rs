@@ -27,17 +27,6 @@ use super::tw_auth::decode_jwt;
 ///
 /// See tw__readme.md for more
 
-
-/// Perf. optimization version:
-/// v4
-//   Requests/sec: 51780
-//   99% in 0.0005 secs
-//   Change: AppState.supply is now AtomicU64 instead of Mutex<u64> 
-
-
-// --------------------------------------------------------------------------
-
-
 //// ------ Requests
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -71,7 +60,7 @@ struct AllocationQuery { username: String }
 #[derive(Default, Debug)]
 pub struct AppState {
     pub buy_seq_no: AtomicU64, // buy sequence number
-    supply: AtomicU64,                 // unallocated 
+    supply: Mutex<u64>,                 // unallocated 
         // this could be Atomic, using Mutex to show lock order / deadlock topic
     pub allocations: DashMap<String, u64>,  // allocated 
         // DashMap: lock-free concurrent HashMap which uses Mutex sharding
@@ -113,18 +102,19 @@ impl Bid {
 //// src\tw_ai_pre_commit_hook.txt
 
 pub fn ordered_locks_buy(state: &AppState) -> 
-    RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>
+    (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
 {
-    // let supply = state.supply.lock().unwrap();
+    let supply = state.supply.lock().unwrap();
     let bids = state.bids.write().unwrap();
-    bids
+    (supply, bids)
 }
 
 pub fn ordered_locks_sell(state: &AppState) -> 
-    RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>
+    (MutexGuard<'_, u64>, RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>)
 {
+    let supply = state.supply.lock().unwrap();
     let bids = state.bids.write().unwrap();
-    bids
+    (supply, bids)
 }
 
 
@@ -159,20 +149,21 @@ async fn buy(
         .map(|claims| claims.features.contains(&"new_allocation".to_string()))
         .unwrap_or(false);
 
+    dbg!(has_feature_new_alloc);
     if has_feature_new_alloc {
         // buy_impl_new_alloc()
     }
 
 
     //// buy starts here
-    let mut bids = ordered_locks_buy(&state);
+    let (mut supply, mut bids) = ordered_locks_buy(&state);
     // instead of:
         // let mut supply = state.supply.lock().unwrap();
         // let mut bids = state.bids.write().unwrap();
 
     buy_impl(
         &state.buy_seq_no,
-        &state.supply,
+        &mut supply,
         &state.allocations,
         &mut bids,
         req.0
@@ -196,7 +187,7 @@ async fn buy(
 #[instrument(skip(buy_seq_no, supply, allocations, bids))]
 pub fn buy_impl(
     buy_seq_no: &AtomicU64,
-    supply: &AtomicU64,
+    supply: &mut MutexGuard<u64>,
     allocations: &DashMap<String, u64>,
     bids: &mut BTreeMap<PriceSeqPair, Bid>, 
     buy_req: BuyRequest
@@ -207,52 +198,38 @@ pub fn buy_impl(
     buy_seq_no.fetch_add(1, Ordering::Relaxed);
     // println!("-- Buy sequence number: #{buy_seq_no:?}");
 
-    let mut current = supply.load(Ordering::Acquire);
-    loop { // CAS loop
-
-        //// 1. No supply, early return, store req into bids
-        ////    - highest price bid at the end of bids vector
-        ////    - same price bids, early bid stored at the end of bids vector 
-        if current == 0 {
+    //// 1. sell immediately if there is unused supply
+    if **supply > 0  {
+        // full fill   : supply = 60, buy: 50 => supply: 10, bid: 50
+        if **supply >= volume {
+            let current_alloc = *allocations.get(&user).as_deref().unwrap_or(&0);
+                // .get returns Option<Ref<>
+            allocations.insert(user.clone(), current_alloc + volume);
+            **supply -= volume;
+        // partial fill: supply = 50, buy: 60 => supply:  0, bid: 10
+        } else {  // partial fill: store unfilled as bid
+            let state_supply = **supply;
+            let current_alloc = *allocations.get(&user).as_deref().unwrap_or(&0);
+            allocations.insert(user.clone(), current_alloc + state_supply);
             let seq = buy_seq_no.load(Ordering::Relaxed);
             bids.insert(
-                (Reverse(price), seq), 
-                Bid::new(user.clone(), volume, price, seq)
+                (Reverse(price), seq),
+                Bid::new(user, volume - state_supply, price, seq)
             );
-            return;
+            // todo: sort? No, bids vec is empty at this point
+            **supply = 0;
         }
-
-        //// 2. There is supply, sell immediately if there is unused supply
-        let new_val = 
-            if current >= volume { current - volume } // full fill 
-            else { 0 };                               // partial fill
-        match supply.compare_exchange(
-            current, new_val, Ordering::AcqRel, Ordering::Acquire
-        ) {
-            Ok(supply_) => { // we won, value updated, 
-                            // supply_ is NOT new_value yet
-                if supply_ >= volume { // full fill 
-                    let current_alloc = 
-                        *allocations.get(&user).as_deref().unwrap_or(&0);
-                        // .get returns Option<Ref<>
-                    allocations.insert(user.clone(), current_alloc + volume);
-                }  
-                else { // partial fill
-                    let current_alloc = *allocations.get(&user).as_deref().unwrap_or(&0);
-                    allocations.insert(user.clone(), current_alloc + supply_);
-                    let seq = buy_seq_no.load(Ordering::Relaxed);
-                    bids.insert(
-                        (Reverse(price), seq),
-                        Bid::new(user.clone(), volume - supply_, price, seq)
-                    );
-                };
-                break
-            }
-            Err(actual) => current = actual, 
-                // other thread changed it, retry with new `current` value
-        }
-    } // end of CAS loop
-
+    }
+    //// 2. otherwise, store req into bids
+    ////    - highest price bid at the end of bids vector
+    ////    - same price bids, early bid stored at the end of bids vector 
+    else {
+        let seq = buy_seq_no.load(Ordering::Relaxed);
+        bids.insert(
+            (Reverse(price), seq), 
+            Bid::new(user, volume, price, seq)
+        );
+    }
 }
 
 
@@ -263,16 +240,17 @@ curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"v
 async fn sell(
     state: web::Data<AppState>, req: web::Json<SellRequest>
 ) -> impl Responder {
-    let mut bids = ordered_locks_sell(&state);
+    let (mut supply, mut bids) = ordered_locks_sell(&state);
     // instead of
         // let mut supply = state.supply.lock().unwrap();
         // let mut bids = state.bids.write().unwrap();
 
     sell_impl(
-        &state.supply,
+        &mut supply,
         &state.allocations,
         &mut bids,
-        req.0);
+        req.0
+    );
 
     format!("\nstate: {state:#?}\n ")
 }
@@ -284,47 +262,32 @@ async fn sell(
 ///    Big O: N - retain will visit every elem (those returns are like breaks)
 ///
 pub fn sell_impl( 
-    supply: &AtomicU64,
+    supply: &mut MutexGuard<u64>,
     allocations: &DashMap<String, u64>,
     bids: &mut BTreeMap<PriceSeqPair, Bid>, 
     sell_req: SellRequest
 ) {
     //// add incoming sell into supply
-    supply.fetch_add(sell_req.volume, Ordering::Relaxed);
+    **supply += sell_req.volume;
 
     //// process/allocate outstanding bids; full or partial fill
     bids.retain(|_, bid| {
-        let mut current = supply.load(Ordering::Acquire);
-        loop { // CAS loop
-            if current == 0 { return true; } // cannot fill, keep bid
-            let new_val = 
-                if current >= bid.volume { current - bid.volume } // full fill 
-                else { 0 };                                       // partial fill
-            match supply.compare_exchange(
-                current, new_val, Ordering::AcqRel, Ordering::Acquire
-            ) {
-                Ok(supply_) => { // we won, value updated, 
-                                 // supply_ is NOT yet new_value, still current
-                    let bid_user = bid.user.clone();
-                    // full fill   : supply = 60, buy: 50 => supply: 10, bid: 50
-                    if supply_ >= bid.volume { // full fill and remove bid
-                        let alloc = 
-                            *allocations.get(&bid_user).as_deref().unwrap_or(&0);
-                        allocations.insert(bid_user.clone(), alloc + bid.volume);
-                        break false // bid fully processed, remove bid
-                    // partial fill: supply = 50, buy: 60 => supply:  0, bid: 10
-                    } else { // partial fill and retain/keep bid
-                        let alloc = 
-                            *allocations.get(&bid_user).as_deref().unwrap_or(&0);
-                        allocations.insert(bid_user, alloc + supply_);
-                        bid.volume -= supply_;
-                        break true
-                    };
-                }
-                Err(actual) => current = actual, 
-                    // other thread changed it, retry with new `current` value
-            }
-        } // end of CAS loop
+        if **supply == 0 { return true; } // cannot fill, keep bid
+        let bid_user = bid.user.clone();
+        // full fill   : supply = 60, buy: 50 => supply: 10, bid: 50
+        if **supply >= bid.volume { // full fill and remove bid
+            let alloc = *allocations.get(&bid_user).as_deref().unwrap_or(&0);
+            allocations.insert(bid_user.clone(), alloc + bid.volume);
+            **supply -= bid.volume;
+            false // bid fully processed, remove bid
+        // partial fill: supply = 50, buy: 60 => supply:  0, bid: 10
+        } else { // partial fill and retain/keep bid
+            let alloc = *allocations.get(&bid_user).as_deref().unwrap_or(&0);
+            allocations.insert(bid_user, alloc + **supply);
+            bid.volume -= **supply;
+            **supply = 0; // we could only partial fill, means supply is 0
+            true
+        }
     });
 
     let _total_alloc: u64 = allocations.iter().map(|e| *e).sum();
@@ -416,10 +379,10 @@ pub mod tests_lib {
 
     // Helper fn
     pub fn buy_impl_for_test(state: &AppState, buy_req: BuyRequest) {
-        let mut bids = ordered_locks_buy(state);
+        let (mut supply, mut bids) = ordered_locks_buy(state);
         buy_impl(
             &state.buy_seq_no,
-            &state.supply,
+            &mut supply,
             &state.allocations,
             &mut bids,
             buy_req
@@ -428,9 +391,9 @@ pub mod tests_lib {
 
     // Helper fn
     pub fn sell_impl_for_test(state: &AppState, sell_req: SellRequest) {
-        let mut bids = ordered_locks_sell(state);
+        let (mut supply, mut bids) = ordered_locks_sell(state);
         sell_impl(
-            &state.supply,
+            &mut supply,
             &state.allocations,
             &mut bids,
             sell_req
@@ -648,7 +611,7 @@ mod concurrency_tests {
 
         let total_alloc: u64 = state.allocations.iter().map(|e| *e).sum();
         let total_supply = 50 * 10; // 500
-        assert_eq!(total_alloc + state.supply.load(Ordering::Relaxed), total_supply);
+        assert_eq!(total_alloc + *state.supply.lock().unwrap(), total_supply);
     }
 
     /// claude ai
@@ -671,7 +634,7 @@ mod concurrency_tests {
         sell_impl_for_test(&state, SellRequest { volume: 500 });
 
         let total_alloc: u64 = state.allocations.iter().map(|e| *e).sum();
-        assert_eq!(total_alloc + state.supply.load(Ordering::Relaxed), 500);
+        assert_eq!(total_alloc + *state.supply.lock().unwrap(), 500);
     }
 
     /// Buys and sells, check allocations + remaining supply = initial supply
@@ -679,9 +642,7 @@ mod concurrency_tests {
     async fn buys_no_oversell() {
         let total_supply = 500;
         let state = web::Data::new(
-            AppState { 
-                supply: AtomicU64::new(total_supply), ..Default::default() 
-            }
+            AppState { supply: Mutex::new(total_supply), ..Default::default() }
         );
 
         let handles = (0..100).map(|_| {
@@ -696,7 +657,7 @@ mod concurrency_tests {
         for h in handles { h.await.unwrap(); }
     
         let total_alloc: u64 = state.allocations.iter().map(|e| *e).sum();
-        let leftover_supply = state.supply.load(Ordering::Relaxed);
+        let leftover_supply = *state.supply.lock().unwrap();
         assert_eq!(total_supply, total_alloc + leftover_supply);
     }
 
@@ -765,7 +726,7 @@ mod property_tests {
         let total_alloc: u64 = state.allocations.iter().map(|e| *e).sum();
         prop_assert_eq!(
             total_supply,
-            total_alloc + state.supply.load(Ordering::Relaxed)
+            total_alloc + *state.supply.lock().unwrap()
         );
     }
 
@@ -814,9 +775,7 @@ mod property_tests {
         volume in 0u64..10_000,
         price in 1u64..100
     ) {
-        let state = AppState { 
-            supply: AtomicU64::new(supply), ..Default::default() 
-        };
+        let state = AppState { supply: Mutex::new(supply), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", volume, price));
         let allocated = *state.allocations.get("u1").as_deref().unwrap_or(&0);
         prop_assert!(allocated <= supply);
@@ -829,11 +788,9 @@ mod property_tests {
         price in 1u64..100
     ) {
         prop_assume!(supply < volume); // force partial fill
-        let state = AppState {
-            supply: AtomicU64::new(supply), ..Default::default()
-        };
+        let state = AppState { supply: Mutex::new(supply), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", volume, price));
-        prop_assert_eq!(state.supply.load(Ordering::Relaxed), 0);
+        prop_assert_eq!(*state.supply.lock().unwrap(), 0);
         let bids = state.bids.read().unwrap();
         prop_assert!(!bids.is_empty()); // remainder stays open
     }
@@ -905,9 +862,9 @@ mod unit_tests {
     fn sell() {
         // 1. add incoming sell into supply
         let state = AppState::default();
-        assert_eq!(state.supply.load(Ordering::Relaxed), 0);
+        assert_eq!(*state.supply.lock().unwrap(), 0);
         sell_impl_for_test(&state, SellRequest { volume: 400 });
-        assert_eq!(state.supply.load(Ordering::Relaxed), 400);
+        assert_eq!(*state.supply.lock().unwrap(), 400);
     
         // 2. allocate outstanding bids
         // case: full fill - state.supply = 60, buy: 50 => supply: 10, bid: 50
@@ -919,7 +876,7 @@ mod unit_tests {
         };
         sell_impl_for_test(&state, SellRequest { volume: 300 });
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &200);
-        assert_eq!(state.supply.load(Ordering::Relaxed), 100);
+        assert_eq!(*state.supply.lock().unwrap(), 100);
         assert!(state.bids.read().unwrap().is_empty());
         // case: partial fill: state.supply = 50, buy: 60 => supply:  0, bid: 10
         let state = AppState { 
@@ -930,7 +887,7 @@ mod unit_tests {
         };
         sell_impl_for_test(&state, SellRequest { volume: 50 });
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &50);
-        assert_eq!(state.supply.load(Ordering::Relaxed), 0);
+        assert_eq!(*state.supply.lock().unwrap(), 0);
         let bids = state.bids.read().unwrap();
         let u1_bid = bids.get(&price_seq_pair(2, 1)).unwrap();
         assert_eq!(u1_bid.user, "u1");
@@ -942,17 +899,17 @@ mod unit_tests {
     fn buy() {
         //// 1. sell immediately if there is unused supply
         // full fill
-        let state = AppState { supply: AtomicU64::new(200), ..Default::default() };
+        let state = AppState { supply: Mutex::new(200), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
         assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 1);
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &200);
-        assert_eq!(state.supply.load(Ordering::Relaxed), 0);
+        assert_eq!(*state.supply.lock().unwrap(), 0);
 
         // partial fill
-        let state = AppState { supply: AtomicU64::new(50), ..Default::default() };
+        let state = AppState { supply: Mutex::new(50), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", 100, 2));
         assert_eq!(state.buy_seq_no.load(Ordering::Relaxed), 1);
-        assert_eq!(state.supply.load(Ordering::Relaxed), 0);
+        assert_eq!(*state.supply.lock().unwrap(), 0);
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &50);
         let bids = state.bids.read().unwrap();
         assert_eq!(bids.len(), 1);
@@ -1023,12 +980,12 @@ mod unit_tests {
     fn buy_same_user_buys_twice() {
         //// 1. sell immediately if there is unused supply
         // full fill
-        let state = AppState { supply: AtomicU64::new(400), ..Default::default() };
+        let state = AppState { supply: Mutex::new(400), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &400);
         // partial fill
-        let state = AppState { supply: AtomicU64::new(300), ..Default::default() };
+        let state = AppState { supply: Mutex::new(300), ..Default::default() };
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
         buy_impl_for_test(&state, BuyRequest::new("u1", 200, 2));
         assert_eq!(state.allocations.get("u1").as_deref().unwrap(), &300);

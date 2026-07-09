@@ -30,6 +30,8 @@ backend fundamentals using actix_web
 > [tw_main.rs](src/tw_main.rs)  
 > [tw_openapi.yaml](src/tw_openapi.yaml)  
 > [tw_perf_testing.md](src/tw_perf_testing.md)  
+> [tw_api_versioning.md](src/tw_api_versioning.md)  
+> [tw_auth.rs](src/tw_auth.rs)  
 > [tw__readme.md](src/tw__readme.md)    
 
 

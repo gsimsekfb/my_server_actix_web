@@ -13,13 +13,13 @@ async fn main() -> std::io::Result<()> {
     // 1. simple logger
     // env_logger::init();
     // 2. for profiling w/ tracing spans - see tw_perf_testing.md for more
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("info".parse().unwrap())
-        )
-        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-        .init();
+    // tracing_subscriber::fmt()
+    //     .with_env_filter(
+    //         tracing_subscriber::EnvFilter::from_default_env()
+    //             .add_directive("info".parse().unwrap())
+    //     )
+    //     .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+    //     .init();
 
     // web::Data<T> is struct Data<T>(Arc<T>)
     let app_state = web::Data::new( AppState::default() );
@@ -27,11 +27,11 @@ async fn main() -> std::io::Result<()> {
     // closure will be run per worker thread (at startup), default workers: 8
     HttpServer::new(move || { // move app_state into the closure
         App::new()
-            .wrap(Logger::default())
+            // .wrap(Logger::default())
             // clone for each worker thread
             .app_data(app_state.clone()) // register the created data
             .route("/", web::get().to(index))
-            .wrap(from_fn(my_middleware))
+            // .wrap(from_fn(my_middleware))
             .service(sell)
             .service(buy)
             .service(allocation)
