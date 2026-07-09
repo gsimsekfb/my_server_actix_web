@@ -71,7 +71,7 @@ struct AllocationQuery { username: String }
 #[derive(Default, Debug)]
 pub struct AppState {
     pub buy_seq_no: AtomicU64, // buy sequence number
-    supply: AtomicU64,                 // unallocated 
+    pub supply: AtomicU64,                 // unallocated 
         // this could be Atomic, using Mutex to show lock order / deadlock topic
     pub allocations: DashMap<String, u64>,  // allocated 
         // DashMap: lock-free concurrent HashMap which uses Mutex sharding

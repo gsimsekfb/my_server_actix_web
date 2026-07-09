@@ -1,7 +1,7 @@
 use criterion::{
     criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion,
 };
-use actix_hello::tw_main::*;
+use actix_hello::tw_main_v0::*;
 
 //// bench cmds
 // cargo bench --bench allocation -- buy_impl
@@ -9,10 +9,10 @@ use actix_hello::tw_main::*;
 
 // Helper fn
 pub fn buy_impl_for_test(state: &AppState, buy_req: BuyRequest) {
-    let mut bids = ordered_locks_buy(state);
+    let (mut supply, mut bids) = ordered_locks_buy(state);
     buy_impl(
         &state.buy_seq_no,
-        &state.supply,
+        &mut supply,
         &state.allocations,
         &mut bids,
         buy_req
@@ -21,9 +21,9 @@ pub fn buy_impl_for_test(state: &AppState, buy_req: BuyRequest) {
 
 // Helper fn
 pub fn sell_impl_for_test(state: &AppState, sell_req: SellRequest) {
-    let mut bids = ordered_locks_sell(state);
+    let (mut supply, mut bids) = ordered_locks_sell(state);
     sell_impl(
-        &state.supply,
+        &mut supply,
         &state.allocations,
         &mut bids,
         sell_req
