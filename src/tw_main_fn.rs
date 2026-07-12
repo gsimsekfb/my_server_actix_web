@@ -6,7 +6,7 @@ use actix_hello::tw_main::*;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("-- Server starting on localhost:8080 ...");
+    println!("\n-- Server starting on localhost:8080 ...");
     println!("-- main's thread: {:?}", std::thread::current().id());
 
     //// DO NOT use both of them at the same time: 
@@ -36,6 +36,7 @@ async fn main() -> std::io::Result<()> {
             .service(buy)
             .service(allocation)
             .service(buy_v2)
+            .service(btc_price)
     })
     .workers(2) // to have a lite program
     .bind(("127.0.0.1", 8080))?

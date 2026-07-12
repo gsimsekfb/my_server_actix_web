@@ -1,17 +1,18 @@
 use actix_web::{
-    App, Error, HttpRequest, HttpServer, Responder, Result, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, post, web
+    App, Error, HttpRequest, HttpResponse, HttpServer, Responder, Result, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, post, web
 };
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use std::{
-    cmp::Reverse, collections::BTreeMap, 
-    sync::{
-        Mutex, MutexGuard, RwLock, RwLockWriteGuard, atomic::{AtomicU64, Ordering}
+    cmp::Reverse, collections::BTreeMap, sync::{
+        Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard, atomic::{AtomicU64, Ordering}
     }
 };
 
 use super::tw_auth::decode_jwt;
+use super::tw_error::ErrorResponse;
+use super::tw_err_circuit_breaker::PriceFeed;
 
 
 /// Topics
@@ -86,6 +87,7 @@ pub struct AppState {
         // BTreeMap<PriceSeqPair, Bid>
             // buy : O(log n) - insert
             // sell: O(n) - retain will visit every elem
+    price_feed: Arc<PriceFeed>
 }
 
 type PriceSeqPair = (Reverse<u64>, u64);
@@ -160,9 +162,8 @@ async fn buy(
         .unwrap_or(false);
 
     if has_feature_new_alloc {
-        // buy_impl_new_alloc()
+        // buy_impl_new_alloc() // todo
     }
-
 
     //// buy starts here
     let mut bids = ordered_locks_buy(&state);
@@ -178,7 +179,7 @@ async fn buy(
         req.0
     );
 
-    format!("\nstate: {state:#?}\n ")
+    HttpResponse::Ok().finish()
 }
 
 /// Behavior: register bid; immediately allocate if leftover supply is available.
@@ -263,6 +264,14 @@ curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"v
 async fn sell(
     state: web::Data<AppState>, req: web::Json<SellRequest>
 ) -> impl Responder {
+    if req.volume == 0 {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            error: "sell_validation_failed",
+            message: "volume must be greater than 0".to_string(),
+            field: Some("volume"),
+        });
+    }
+
     let mut bids = ordered_locks_sell(&state);
     // instead of
         // let mut supply = state.supply.lock().unwrap();
@@ -274,7 +283,7 @@ async fn sell(
         &mut bids,
         req.0);
 
-    format!("\nstate: {state:#?}\n ")
+    HttpResponse::Ok().finish()
 }
 
 /// Behavior: add supply and allocate to outstanding bids
@@ -389,6 +398,25 @@ async fn buy_v2(
     // buy_impl_v2()
 
     ">> server response: buy_v2".to_string()
+}
+
+/// See `src/tw_err_circuit_breaker.rs` for more
+#[get("/btc-price")]
+async fn btc_price(state: web::Data<AppState>) -> impl Responder {
+    match state.price_feed.get_btc_price().await {
+        Ok(price) => 
+            HttpResponse::Ok().json(serde_json::json!({ "price": price })),
+        // Fetch failed 3 times in a row
+        Err("circuit_open") => 
+            HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "circuit_open",
+            "message": "price feed unavailable, try again later"
+        })),
+        // Fetch failed less then 3 times
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": e
+        })),
+    }
 }
 
 

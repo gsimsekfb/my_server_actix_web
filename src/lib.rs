@@ -26,4 +26,6 @@ mod main_8_1_Testing_Streams;
 pub mod tw_main;
 pub mod tw_main_v0;
 pub mod tw_auth;
+pub mod tw_err_circuit_breaker;
+pub mod tw_error;
 
