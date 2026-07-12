@@ -53,36 +53,50 @@ curl -s localhost:8080/allocation?username=u1
 
 ### Files quick summary:
 
-tw_assignment.md
+[`tw_assignment.md`](tw_assignment.md)
    - main full spec doc.
 
-tw_assignment_specs.md  
+[`tw_assignment_specs.md`](tw_assignment_specs.md)   
   - minimal summary of business logic doc.
 
-tw_design.md
+[`tw_perf_testing.md`](tw_perf_testing.md)   
+  - performance tests for production
+
+[`tw_perf_optimization.md`](tw_perf_optimization.md)  
+
+[`tw_design.md`](tw_design.md)  
   - self explanatory
 
-tw_known_issues.md
+[`tw_known_issues.md`](tw_known_issues.md)  
   - things omitted, possible improvements.
 
-tw_main.rs
+[`tw_main.rs`](tw_main.rs)  
   - main app implementation
   - important commits:
   - tw: Using lock/lockfree per AppState field instead of one Mutex for all AppState
   - refactor: replace bids Vec with BTreeMap
   - refactor: Full separation between HTTP layer and business logic (_impl fns and thus tests do not see mutex or Arc)
 
-tw_buys.bat
+[`tw_buys.bat`](tw_buys.bat)  
   - batch script with buy requests from u1,u2,u3,u4 (from the example in full spec. md).
 
-tw_load_test.ps1
+[`tw_load_test.ps1`](tw_load_test.ps1)  
   - 1000 buy requests, 1 sell and checks
 
-tw_ai_pre_commit_hook.txt
+[`tw_ai_pre_commit_hook.txt`](tw_ai_pre_commit_hook.txt) 
   - asserts code changes do not violate lock order to prevent deadlock.  
 
-tw_openapi.yaml
+[`tw_openapi.yaml`](tw_openapi.yaml)  
   - self explanatory
   
-tw_perf_testing.md  
-  - performance tests for production
+
+[`tw_api_versioning.md`](tw_api_versioning.md)  
+[`tw_auth.rs`](tw_auth.rs)  
+[`tw_data_valid_error_handling.md`](tw_data_valid_error_handling.md)  
+[`tw_debug.md`](tw_debug.md)  
+[`tw_error.rs`](tw_error.rs)  
+[`tw_err_circuit_breaker.rs`](tw_err_circuit_breaker.rs)  
+[`tw_main_fn.rs`](tw_main_fn.rs)  
+[`tw_main_v0.rs`](tw_main_v0.rs)  
+[`tw_perf_optimization.md`](tw_perf_optimization.md)  
+

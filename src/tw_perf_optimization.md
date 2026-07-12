@@ -1,32 +1,10 @@
 
-## Main Goals
+## Goals
 
 - Maximize throughput 
 - Minimize P99 latency 
 
 under concurrent load while maintaining correctness guarantees.
-
-
-## Environment
-
-```
-Surface Pro 7, 16 GB
-$ lscpu | grep -E "Model name|CPU\(s\)"
-CPU(s):                 8
-On-line CPU(s) list:    0-7
-Model name:             Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz
-NUMA node0 CPU(s):      0-7
-
-$ uname -r
-6.6.87.2-microsoft-standard-WSL2
-```
-
-
-## Next
-
-- Replace `RwLock<BTreeMap>` on `bids` with a lock-free structure like `DashMap` or a channel-based design. DashMap uses a HashMap internally so we lose the sorted order that BTreeMap provides — we'd need to sort manually when processing bids. BTreeMap maintains sorted order automatically on every insert - O(log n), while DashMap is unsorted so we'd pay O(n log n) to sort at sell time instead.
-
-
 
 ## Optimizations
 
@@ -69,6 +47,25 @@ v0
   Requests/sec: 18887  
   99% in 0.0012 secs  
 ```
+
+## Environment
+
+```
+Surface Pro 7, 16 GB
+$ lscpu | grep -E "Model name|CPU\(s\)"
+CPU(s):                 8
+On-line CPU(s) list:    0-7
+Model name:             Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz
+NUMA node0 CPU(s):      0-7
+
+$ uname -r
+6.6.87.2-microsoft-standard-WSL2
+```
+
+
+## Next
+
+- Replace `RwLock<BTreeMap>` on `bids` with a lock-free structure like `DashMap` or a channel-based design. DashMap uses a HashMap internally so we lose the sorted order that BTreeMap provides — we'd need to sort manually when processing bids. BTreeMap maintains sorted order automatically on every insert - O(log n), while DashMap is unsorted so we'd pay O(n log n) to sort at sell time instead.
 
 
 ## Details
