@@ -12,7 +12,7 @@ use std::{
 
 use super::tw_auth::decode_jwt;
 use super::tw_error::ErrorResponse;
-use super::tw_err_circuit_breaker::PriceFeed;
+use super::tw_err_circuit_breaker::{PriceFeed, PriceFeedError};
 
 
 /// Topics
@@ -407,14 +407,14 @@ async fn btc_price(state: web::Data<AppState>) -> impl Responder {
         Ok(price) => 
             HttpResponse::Ok().json(serde_json::json!({ "price": price })),
         // Fetch failed 3 times in a row
-        Err("circuit_open") => 
+        Err(PriceFeedError::CircuitOpen) => 
             HttpResponse::ServiceUnavailable().json(serde_json::json!({
-            "error": "circuit_open",
+            "error": PriceFeedError::CircuitOpen.as_str(),
             "message": "price feed unavailable, try again later"
         })),
         // Fetch failed less then 3 times
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "error": e
+            "error": e.as_str()
         })),
     }
 }

@@ -21,6 +21,23 @@ enum CircuitState {
     Open(Instant)
 }
 
+#[derive(Debug)]
+pub enum PriceFeedError {
+    CircuitOpen,
+    FetchFailed,
+    ParseFailed,
+}
+
+impl PriceFeedError {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PriceFeedError::CircuitOpen => "circuit_open",
+            PriceFeedError::FetchFailed => "fetch_failed",
+            PriceFeedError::ParseFailed => "parse_failed",
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct PriceFeed {
     failures: AtomicU64,
@@ -41,14 +58,14 @@ impl PriceFeed {
     /// Usage: PriceFeed::new() returns Arc<PriceFeed>; 
     ///        call get_btc_price().wait
     /// Also see tw_main.rs -> btc-price handler.
-    pub async fn get_btc_price(&self) -> Result<f64, &'static str> {
+    pub async fn get_btc_price(&self) -> Result<f64, PriceFeedError> {
         // close circuit to try again if 10 secs past after last req. to open 
         // circuit
         {
             let mut state = self.state.lock().unwrap();
             if let CircuitState::Open(since) = *state {
                 if since.elapsed() < Duration::from_secs(10) {
-                    return Err("circuit_open"); // block request
+                    return Err(PriceFeedError::CircuitOpen); // block request
                 }
                 *state = CircuitState::Closed; // half-open: try again
                 self.failures.store(0, Ordering::Relaxed);
@@ -58,18 +75,18 @@ impl PriceFeed {
         // call downstream
         const BTC_PRICE: &str = 
             "https://api.coinbase.com/v2/prices/BTC-USD/spot";
-        let result = reqwest::get(BTC_PRICE) // Result<Response, &str>
+        let result = reqwest::get(BTC_PRICE)
             .await
             .and_then(|r| r.error_for_status())
-            .map_err(|_| "fetch_failed");
+            .map_err(|_| PriceFeedError::FetchFailed);
             // todo: add timeout
 
         match result {
             Ok(resp) => {
                 let resp_price: CoinbaseResponse = 
-                    resp.json().await.map_err(|_| "parse_failed")?;
+                    resp.json().await.map_err(|_| PriceFeedError::ParseFailed)?;
                 self.failures.store(0, Ordering::Relaxed); // reset on success
-                Ok(resp_price.data.amount.parse().map_err(|_| "parse_failed")?)
+                Ok(resp_price.data.amount.parse().map_err(|_| PriceFeedError::ParseFailed)?)
             }
             Err(e) => {
                 let failures = 
