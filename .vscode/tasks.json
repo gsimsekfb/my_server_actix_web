@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "tw-test-all",
+            "type": "shell",
+            "command": "cargo test --all"
+        },
+        {
+            "label": "tw-clippy",
+            "type": "shell",
+            "command": "cargo clippy --workspace --all-targets"
+        },
+        {
+            "label": "tw-bench-build",
+            "type": "shell",
+            "command": "cargo bench --no-run"
+        }
+    ]
+}
