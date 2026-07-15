@@ -118,15 +118,13 @@ pub fn ordered_locks_buy(state: &AppState) ->
     RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>
 {
     // let supply = state.supply.lock().unwrap();
-    let bids = state.bids.write().unwrap();
-    bids
+    state.bids.write().unwrap()
 }
 
 pub fn ordered_locks_sell(state: &AppState) -> 
     RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>
 {
-    let bids = state.bids.write().unwrap();
-    bids
+    state.bids.write().unwrap()
 }
 
 
@@ -224,9 +222,9 @@ pub fn buy_impl(
         }
 
         //// 2. There is supply, sell immediately if there is unused supply
-        let new_val = 
-            if current >= volume { current - volume } // full fill 
-            else { 0 };                               // partial fill
+        let new_val = current.saturating_sub(volume);
+            // if current >= volume { current - volume } // full fill 
+            // else { 0 };                               // partial fill
         match supply.compare_exchange(
             current, new_val, Ordering::AcqRel, Ordering::Acquire
         ) {
@@ -306,9 +304,9 @@ pub fn sell_impl(
         let mut current = supply.load(Ordering::Acquire);
         loop { // CAS loop
             if current == 0 { return true; } // cannot fill, keep bid
-            let new_val = 
-                if current >= bid.volume { current - bid.volume } // full fill 
-                else { 0 };                                       // partial fill
+            let new_val = current.saturating_sub(bid.volume);
+                // if current >= volume { current - volume } // full fill 
+                // else { 0 };                               // partial fill
             match supply.compare_exchange(
                 current, new_val, Ordering::AcqRel, Ordering::Acquire
             ) {
