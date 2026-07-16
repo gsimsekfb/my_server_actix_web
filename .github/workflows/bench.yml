@@ -19,4 +19,4 @@ jobs:
     - name: Install lld
       run: sudo apt -y install lld
     - name: bench
-      run: cargo bench
+      run: cargo bench --no-run

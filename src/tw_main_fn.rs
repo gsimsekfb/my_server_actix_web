@@ -1,6 +1,4 @@
-use actix_web::{
-    App, HttpServer, middleware::{Logger, from_fn}, web
-};
+use actix_web::{App, HttpServer, web};
 
 use actix_hello::tw_main::*;
 
@@ -27,11 +25,11 @@ async fn main() -> std::io::Result<()> {
     // closure will be run per worker thread (at startup), default workers: 8
     HttpServer::new(move || { // move app_state into the closure
         App::new()
-            // .wrap(Logger::default())
+            // .wrap(actix_web::middleware::Logger::default())
             // clone for each worker thread
             .app_data(app_state.clone()) // register the created data
             .route("/", web::get().to(index))
-            // .wrap(from_fn(my_middleware))
+            // .wrap(actix_web::middleware::from_fn(my_middleware))
             .service(sell)
             .service(buy)
             .service(allocation)

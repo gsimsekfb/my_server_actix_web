@@ -21,4 +21,4 @@ jobs:
     - name: a
       run: rustup component add clippy
     - name: Run clippy
-      run: cargo clippy --workspace --all-targets -- -D warnings  # treat warnings as errors
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings  # treat warnings as errors

@@ -2,17 +2,17 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "tw-test-all",
+            "label": "test-all",
             "type": "shell",
-            "command": "cargo test --all"
+            "command": "cargo test --workspace --all-targets --all-features"
         },
         {
-            "label": "tw-clippy",
+            "label": "clippy",
             "type": "shell",
-            "command": "cargo clippy --workspace --all-targets"
+            "command": "cargo clippy --workspace --all-targets --all-features"
         },
         {
-            "label": "tw-bench-build",
+            "label": "bench-build",
             "type": "shell",
             "command": "cargo bench --no-run"
         }
