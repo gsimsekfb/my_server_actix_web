@@ -52,7 +52,7 @@ async fn sell(
 **5xx — Server Errors:**
 - 500 — unexpected server error
 - 502 — bad gateway (upstream returned invalid response)
-- 503 — service unavailable (downstream down, circuit open)
+- 503 — service unavailable (upstream down, circuit open)
 - 504 — gateway timeout (upstream too slow)
 
 
@@ -101,7 +101,7 @@ async fn buy(
 }
 ```
 
-### 5. Circuit breaker pattern — stop calling a failing downstream service  
+### 5. Circuit breaker pattern — stop calling a failing upstream service  
 
 Three states: 
 - closed (normal, requests pass through)
@@ -110,7 +110,7 @@ Three states:
 
 e.g.  
 ```
-//// PriceFeed — circuit breaker for downstream price feed calls
+//// PriceFeed — circuit breaker for upstream price feed calls
 ////
 //// Fetches BTC-USD spot price from Coinbase public API.
 //// Tracks failures and opens the circuit after 3 consecutive failures,
@@ -135,7 +135,7 @@ e.g. If `get_btc_price()` fails, the `/buy` endpoint should still work — just 
 
 ### 7. Correlation IDs — trace a request across services via a shared ID in logs and responses
 
-Every incoming request gets a unique ID (UUID), passed through all log lines and downstream calls so we can grep one ID and see the full request journey across services.
+Every incoming request gets a unique ID (UUID), passed through all log lines and upstream calls so we can grep one ID and see the full request journey across services.
 ```
 # 1. A buy request arrives
 INFO  correlation_id=abc-123 method=POST path=/buy user=u1 volume=10 price=3

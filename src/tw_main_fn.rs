@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
     let app_state = web::Data::new( AppState::default() );
 
     // closure will be run per worker thread (at startup), default workers: 8
-    HttpServer::new(move || { // move app_state into the closure
+    let server = HttpServer::new(move || { // move app_state into the closure
         App::new()
             // .wrap(actix_web::middleware::Logger::default())
             // clone for each worker thread
@@ -38,9 +38,15 @@ async fn main() -> std::io::Result<()> {
     })
     .workers(2) // to have a lite program
     .bind(("127.0.0.1", 8080))?
-    .run()
-    .await?;
+    .run();
  
-    println!("Server was shut-down");
+    let handle = server.handle();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_mins(5)).await;
+        handle.stop(true).await;
+    });
+    server.await?;
+
+    println!("-- Server was shut-down after configured stop-timeout");
     std::io::Result::Ok(())
 }

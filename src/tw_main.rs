@@ -411,7 +411,7 @@ async fn btc_price(state: web::Data<AppState>) -> impl Responder {
             "message": "price feed unavailable, try again later"
         })),
         // Fetch failed less then 3 times
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+        Err(e) => HttpResponse::BadGateway().json(serde_json::json!({
             "error": e.as_str()
         })),
     }

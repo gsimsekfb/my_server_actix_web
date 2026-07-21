@@ -8,6 +8,7 @@
             "name": "twin",
             "type": "lldb",
             "request": "launch",
+            "sourceLanguages": ["rust"],
             "cargo": {
                 "args": ["build", "--bin", "twin"],
             },
@@ -19,8 +20,9 @@
             "name": "cargo test",
             "type": "lldb",
             "request": "launch",
+            "sourceLanguages": ["rust"],
             "cargo": {
-                "args": ["test", "unit"],
+                "args": ["test", "--lib", "ww"],
             },
             "args": [],
             // "env":{"NODE_ENV": "test"},
