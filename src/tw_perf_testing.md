@@ -10,16 +10,16 @@
 | **Soak Test** | **Drill / wrk** | Memory leaks & resource exhaustion | Pre-release (hours) |
 
 ## Tests
-### [1. Micro-benchmarking](#1-micro-benchmarking-the-algorithm-level)
-### [2. HTTP Load Testing](#2-http-load-testing-the-system-level)
-### [3. Continuous Profiling](#3-continuous-profiling-the-visibility-level)
-### [4. Soak / Endurance Testing](#4-soak--endurance-testing-the-longevity-level)
+[1. Micro-benchmarking](#1--micro-benchmarking---the-algorithm-level)  
+[2. HTTP Load Testing](#2--http-load-testing---the-system-level)  
+[3. Continuous Profiling](#3--continuous-profiling---the-visibility-level)  
+[4. Soak / Endurance Testing](#4--soak-aka-endurance-testing---the-longevity-level)  
 
 
 ----------------------------------------------------------------------------
 
 
-### 1. Micro-benchmarking (The "Algorithm" Level)
+### 1- Micro-benchmarking - The Algorithm Level
 Since we are optimizing specific operations like `retain` vs `pop_first` on a `BTreeMap`, we should use **Criterion.rs**. This is the industry standard for measuring small units of code with statistical rigor.
 *   **The Goal:** Isolate the `buy_impl` logic from all network/locking overhead to see how it scales with the number of orders.
 *   **Setup:** Create benchmarks that populate a map with $10^3, 10^4, \text{and } 10^5$ bids to measure the exact nanosecond cost of rebalancing.
@@ -85,7 +85,7 @@ Linear scaling — roughly O(n):
 
 ------------------
 
-### 2. HTTP Load Testing (The "System" Level)
+### 2- HTTP Load Testing - The System Level
 Once the algorithm is fast, we must test the **lock contention** in Axum handlers under high load. Use a tool like **Drill** or **Goku**, which are written in Rust for high-throughput benchmarking.
 *   **The Goal:** Measure how many Requests Per Second (RPS) `buy` handler can process before the fine-grained locks cause latency spikes (P99s).
 *   **Metric to Watch:** **Tail Latency.** In financial systems, the average latency is often a "lie"; we care about the P99 or P99.9—the worst-case delay experienced by users.
@@ -198,7 +198,7 @@ hey -c 500 -z 10s http://localhost:8080/endpoint
 -----
 
 
-### 3. Continuous Profiling (The "Visibility" Level)
+### 3- Continuous Profiling - The Visibility Level
 In production, we cannot always reproduce performance issues locally. Use **Flamegraphs** (via `cargo-flamegraph`) to visualize exactly where CPU time is being spent—whether it's inside the `BTreeMap` search or waiting for a `Mutex`.
 *   **The Goal:** Identify "hot paths" and locking bottlenecks visually.
 *   **Tooling:** Use the **Tracing** crate to instrument code. This allows we to collect timing data across `buy` and `buy_impl` boundary without stopping the service.
@@ -285,7 +285,7 @@ Read the logs — look for `close` lines with `time.busy` and `time.idle` fields
 
 
 
-### 4. Soak / Endurance Testing (The "Longevity" Level)
+### 4- Soak aka Endurance Testing - The Longevity Level
 The three categories above test peak performance, but production services run for days. A soak test runs **moderate, sustained load for hours** to surface issues that only appear over time.
 *   **The Goal:** Catch memory leaks, connection pool exhaustion, file-descriptor leaks, or gradual latency degradation that short burst tests miss.
 *   **Setup:** Run Drill/wrk at ~60-70% of max RPS for 2-4 hours; monitor RSS memory, open FDs, and P99 latency trends over time.
