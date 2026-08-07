@@ -255,9 +255,16 @@ fn buy_impl(...) { ... }
 i. add `#[instrument]` for `fn buy` and `fn buy_impl`
 
 ii. enable this line in main.rs
-```    
-    tracing_subscriber::fmt()
-        ...
+```rust    
+// For profiling w/ tracing spans - see tw\_perf\_testing.md for more
+tracing\_subscriber::fmt()
+    .with\_env\_filter(
+        tracing\_subscriber::EnvFilter::from\_default\_env()
+            .add\_directive("info".parse().unwrap())
+    )
+    .with\_span\_events(tracing\_subscriber::fmt::format::FmtSpan::CLOSE)
+    .init();
+
 ```
 
 iii. 
@@ -281,8 +288,10 @@ Read the logs — look for `close` lines with `time.busy` and `time.idle` fields
 **Test result:**   
 `buy_impl` takes ~25-47µs of actual CPU (`time.busy`), while the full `buy` handler takes ~430-604µs — the ~550µs difference is overhead from HTTP parsing, JSON deserialization, and lock acquisition (`time.idle` + framework overhead).
 
-----
 
+[↑ Back to top](#tests)
+
+----
 
 
 ### 4- Soak aka Endurance Testing - The Longevity Level
