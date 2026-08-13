@@ -101,6 +101,16 @@ async fn buy(
 }
 ```
 
+> Side Note: Related topic "Safe requests"
+
+### Safe vs. Idempotent
+
+| Concept        | Meaning                                                          |
+| -------------- | ---------------------------------------------------------------- |
+| **Safe**       | Doesn't change server state                                      |
+| **Idempotent** | Repeating the request has the same final effect as doing it once |
+
+
 ### 5. Circuit breaker pattern — stop calling a failing upstream service  
 
 Three states: 

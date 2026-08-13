@@ -98,6 +98,10 @@ SQL - "Relational" data
 - so no duplication — each fact lives in exactly one place
 - joins reassemble related data at query time
 
+Note:  
+For highly interconnected data, the document model is awkward, the relational model is acceptable, and graph models are the most natural.  
+Src: Designing Data Intensive Applications by Martin Kleppmann 2017  
+
 e.g.
 
 We want `orders.user_id` to reference `users.id` — Alice's name is stored once in `users`, and every order just points to it via `user_id`. 
@@ -154,6 +158,9 @@ NoSQL - "Denormalized" data
 - duplication is expected and fine
 - no joins — everything needed is already nested together
 
+e.g.  
+For example, many-to-many relationships may never be needed in an analytics application that uses a document database to record which events occurred at which time.
+
 e.g.
 
 chats JSON document/collection:  
@@ -179,6 +186,17 @@ chats JSON document/collection:
 ```
 
 `members` and `messages` live inside the same chat document — no separate "users" collection to join against, everything you need to render this chat is right there in one read.
+
+CON:  
+The document model has limitations: for example, you cannot refer directly to a nested item within a document, but instead you need to say something like “the second item in the list of positions for user 251” (much like an access path in the hierarchical model). However, as long as documents are not too deeply nested, that is not usually a problem.  
+Src: Designing Data Intensive Applications by Martin Kleppmann 2017  
+
+WHEN-NOT-TO-USE:  
+If application does use many-to-many relationships, the document
+model becomes less appealing.  (It’s possible to reduce the need for joins by denormalizing, but then the application code needs to do additional work to keep the denormalized data consistent. Joins can be emulated in application code by making multiple requests to the database, but that also moves complexity into the application and is usually slower than a join performed by specialized code inside the database.)  
+In such cases, using a document model can lead to significantly more complex application code and worse performance.  
+Src: Designing Data Intensive Applications by Martin Kleppmann 2017  
+
 
 
 [↑ Back to top](#differences)
