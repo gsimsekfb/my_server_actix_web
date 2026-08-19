@@ -24,7 +24,12 @@
 ```
 cargo r --bin twin  // run server
 cargo t --bin twin  // run tests
+
+cargo r --bin twin --release --features disable_logs 
+  // e.g. for perf tests
+cargo r --bin twin --release --features enable_tracing_spans 
 ``` 
+
 ```
 // hot reload
 watchexec -e rs -r -- cargo run --bin twin

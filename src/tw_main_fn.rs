@@ -4,20 +4,33 @@ use actix_hello::tw_main::*;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("\n-- Server starting on localhost:8080 ...");
-    println!("-- main's thread: {:?}", std::thread::current().id());
 
-    //// DO NOT use both of them at the same time: 
-    // 1. simple logger
-    // env_logger::init();
-    // 2. for profiling w/ tracing spans - see tw_perf_testing.md for more
-    // tracing_subscriber::fmt()
-    //     .with_env_filter(
-    //         tracing_subscriber::EnvFilter::from_default_env()
-    //             .add_directive("info".parse().unwrap())
-    //     )
-    //     .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-    //     .init();
+    if cfg!(not(feature = "disable_logs")) {
+        println!("\n-- Server starting on localhost:8080 ...");
+        println!("-- main's thread: {:?}", std::thread::current().id());
+    }
+
+    // Simple logger - see tw_debug.md for more
+    // Note: should not be enabled w/ tracing spans feature
+    if cfg!(
+        all(not(feature = "disable_logs"), not(feature = "enable_tracing_spans"))
+    ){
+        env_logger::Builder::from_env(
+            env_logger::Env::default().default_filter_or("info")
+        ).init();
+    }
+
+    // For profiling w/ tracing spans - see tw_perf_testing.md for more
+    // Note: should not be used when the env_logger is enabled
+    if cfg!(feature = "enable_tracing_spans") {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive("info".parse().unwrap())
+            )
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .init();
+    }
 
     // web::Data<T> is struct Data<T>(Arc<T>)
     let app_state = web::Data::new( AppState::default() );
@@ -29,6 +42,7 @@ async fn main() -> std::io::Result<()> {
             // clone for each worker thread
             .app_data(app_state.clone()) // register the created data
             .route("/", web::get().to(index))
+            // todo: add this into disable_logs feature, e.g. let app = ...; app.wrap(...);
             // .wrap(actix_web::middleware::from_fn(my_middleware))
             .service(sell)
             .service(buy)
