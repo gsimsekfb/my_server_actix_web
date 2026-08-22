@@ -14,7 +14,7 @@ examples:
 
 # B. Error Handling
 
-### 1. Return structured error responses with consistent shape
+## 1. Return structured error responses with consistent shape
 
 ```rust
 #[derive(Serialize)]
@@ -37,7 +37,9 @@ async fn sell(
     }
 ```     
 
-### 2. Error classification: client errors (4xx) vs server errors (5xx)
+## 2. Error classification: client errors (4xx) vs server errors (5xx)
+
+## HTTP Errors:
 
 **4xx — Client Errors:**
 - 400 — invalid input
@@ -55,11 +57,34 @@ async fn sell(
 - 503 — service unavailable (upstream down, circuit open)
 - 504 — gateway timeout (upstream too slow)
 
+## gRPC Errors:
 
-### 3. Never expose internal details (stack traces, DB errors) to clients
+**Client errors (caller's fault):**
+- `INVALID_ARGUMENT` — bad input
+- `UNAUTHENTICATED` — missing/invalid credentials
+- `PERMISSION_DENIED` — authenticated but not authorized
+- `NOT_FOUND` — resource doesn't exist
+- `ALREADY_EXISTS` — duplicate/conflict
+- `FAILED_PRECONDITION` — valid request but system state doesn't allow it
+- `OUT_OF_RANGE` — value outside valid range
+
+**Server errors (system's fault):**
+- `INTERNAL` — unexpected server bug/panic
+- `RESOURCE_EXHAUSTED` — rate limited / quota exceeded (usually server-enforced)
+- `UNAVAILABLE` — server temporarily down/overloaded (retryable)
+- `DATA_LOSS` — unrecoverable data corruption/loss
+
+**Depends on context (not cleanly client or server):**
+- `DEADLINE_EXCEEDED` — deadline expired; could be server too slow or client-set deadline too short
+- `CANCELLED` — caller cancelled the RPC (usually client-side, but reflects who cancelled, not fault)
+- `ABORTED` — concurrency/transaction conflict; often retryable, depends on the operation
+- `UNIMPLEMENTED` — operation not supported by the server; not really an operational fault by either side
+- `UNKNOWN` — unmapped/unrecognized error, not specifically "panics" (panics typically map to `INTERNAL`)
+
+## 3. Never expose internal details (stack traces, DB errors) to clients
 
 
-### 4. Idempotency — retrying a failed request shouldn't cause duplicate side effects
+## 4. Idempotency — retrying a failed request shouldn't cause duplicate side effects
 
 e.g. If a `/buy` request times out and the client retries, the server might process it twice — idempotency means the second request has no additional effect, typically implemented by the client sending a unique `idempotency-key` header and the server storing processed request IDs to detect and deduplicate retries.
 
@@ -111,7 +136,7 @@ async fn buy(
 | **Idempotent** | Repeating the request has the same final effect as doing it once |
 
 
-### 5. Circuit breaker pattern — stop calling a failing upstream service  
+## 5. Circuit breaker pattern — stop calling a failing upstream service  
 
 Three states: 
 - closed (normal, requests pass through)
@@ -138,12 +163,12 @@ See impl. in:
 
 
 
-### 6. Graceful degradation — partial failure shouldn't bring down the whole system
+## 6. Graceful degradation — partial failure shouldn't bring down the whole system
 
 e.g. If `get_btc_price()` fails, the `/buy` endpoint should still work — just skip price validation or use a cached/default price instead of returning 500 and blocking all buys.  
 
 
-### 7. Correlation IDs — trace a request across services via a shared ID in logs and responses
+## 7. Correlation IDs — trace a request across services via a shared ID in logs and responses
 
 Every incoming request gets a unique ID (UUID), passed through all log lines and upstream calls so we can grep one ID and see the full request journey across services.
 ```

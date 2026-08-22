@@ -1,10 +1,10 @@
 
-### App Desctiption
+# App Desctiption
 (1) A tiny Rust/actix-web HTTP service implementing a priority-based order matching engine, built with per-field locking (`Mutex`, `RwLock`, `DashMap`, `AtomicU64`) for concurrent correctness.
 
 (2) A high-performance order-matching system that leverages fine-grained synchronization and a sorted BTreeMap to efficiently process buy requests against a price-time prioritized bid book.
 
-### Key Topics Covered
+# Key Topics Covered
 1. Lock order - deadlock prevention enforced with fns and with AI pre-commit hook
    - see ordered_locks_*() fns
    - see [tw_ai_pre_commit_hook.txt](tw_ai_pre_commit_hook.txt)
@@ -20,7 +20,7 @@
    - Concurrency tests (spawn tasks that hammer /buy & /sell; assert invariants).
    - Black-box integration tests using the HTTP layer.
 
-### Cheat sheet
+# Cheat sheet
 ```
 cargo r --bin twin  // run server
 cargo t --bin twin  // run tests
@@ -56,7 +56,7 @@ curl -s localhost:8080/allocation?username=u1
 ``` 
 
 
-### Files quick summary:
+# Files Info:
 
 [`tw_assignment.md`](tw_assignment.md)
    - main full spec doc.
@@ -105,3 +105,6 @@ curl -s localhost:8080/allocation?username=u1
 [`tw_main_v0.rs`](tw_main_v0.rs)  
 [`tw_perf_optimization.md`](tw_perf_optimization.md)  
 
+
+# Next
+- Both for REST and gRPC - buy_impl/sell_impl results are ignored. If these operations can fail or return meaningful status, gRPC always reports success.

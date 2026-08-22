@@ -1,0 +1,30 @@
+syntax = "proto3";
+package twin;
+
+service Twin {
+    rpc Buy (BuyRequest) returns (BuyResponse);
+    rpc Sell (SellRequest) returns (SellResponse);
+    rpc GetAllocation (AllocationRequest) returns (AllocationResponse);
+}
+
+message BuyRequest {
+    string user = 1;
+    uint64 volume = 2;
+    uint64 price = 3;
+}
+
+message BuyResponse {}
+
+message SellRequest {
+    uint64 volume = 1;
+}
+
+message SellResponse {}
+
+message AllocationRequest {
+    string username = 1;
+}
+
+message AllocationResponse {
+    uint64 volume = 1;
+}

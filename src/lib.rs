@@ -31,4 +31,5 @@ pub mod tw_main_v0;
 pub mod tw_auth;
 pub mod tw_err_circuit_breaker;
 pub mod tw_error;
+pub mod tw_grpc;
 

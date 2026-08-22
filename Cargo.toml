@@ -20,10 +20,13 @@ jsonwebtoken = { version = "10.4.0", default-features = false, features = ["hmac
 log = "0.4.29"
 num-bigint-dig = "0.9.1"
 proptest = "1.11.0"
+prost = "0.13"
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = "1.0.228"
 serde_json = "1.0.149"
 tokio = "1.52.1"
+tonic = "0.13"
+tonic-reflection = "0.13"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["fmt", "time", "env-filter"] }
 
@@ -31,6 +34,10 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "time", "env-filter"]
 criterion = { version = "0.5", features = ["html_reports"] }
 mockito = "1.7.2"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+
+[build-dependencies]
+protoc-bin-vendored = "3.2.0"
+tonic-build = "0.13"
 
 [[bench]]
 name = "allocation"
