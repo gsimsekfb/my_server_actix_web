@@ -41,23 +41,21 @@ async fn main() -> std::io::Result<()> {
     // closure will be run per worker thread (at startup), default workers: 8
     let http_server = HttpServer::new(move || { // move app_state into the closure
         App::new()
-            // todo: add this into disable_logs feature, 
-            // e.g. let app = ...; app.wrap(...);
-            .wrap(actix_web::middleware::Logger::default())
-            // clone for each worker thread
             .app_data(app_state.clone()) // register the created data
             .route("/", web::get().to(index))
-            // todo: add this into disable_logs feature,
-            // e.g. let app = ...; app.wrap(...);
-            // todo: to be used while debugging
-            // .wrap(actix_web::middleware::from_fn(my_middleware))
             .service(sell)
             .service(buy)
             .service(allocation)
             .service(buy_v2)
             .service(btc_price)
+            .wrap(actix_web::middleware::Condition::new(
+                cfg!(not(feature = "disable_logs")),
+                actix_web::middleware::Logger::default(),
+            ))
+            // enable/use while debugging
+            // .wrap(actix_web::middleware::from_fn(my_middleware))
     })
-    .workers(2) // to have a lite program
+    .workers(2)
     .bind(("127.0.0.1", 8080))?
     .run();
 

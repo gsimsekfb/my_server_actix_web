@@ -420,7 +420,8 @@ async fn btc_price(state: web::Data<AppState>) -> impl Responder {
 
 //// ----- Middleware
 
-/// todo: not functional for now
+/// To be edited/used while debugging, 
+/// also find/enable the line with "my_middleware" in tw_main_fn.rs
 pub async fn my_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
