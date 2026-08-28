@@ -214,7 +214,7 @@ The minimal high-value approach tests in practice:
 
 **A. flamegraph** — run under load, generate flamegraph to see where CPU time goes:
 ```bash
-cargo flamegraph --bin twin -- &
+cargo flamegraph --bin twn -- &
 hey -c 50 -z 10s ... 
 # flamegraph.svg generated automatically
 ```
@@ -227,10 +227,10 @@ Using samply instead of flamegraph
 cargo install samply
 
 # 2. Build with debug symbols
-CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release --bin twin
+CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release --bin twn
 
 # 3. Profile under load
-samply record ./target/release/twin
+samply record ./target/release/twn
 # 10 concurrent connections, 10 secs, unlimited requests
 hey -c 10 -z 10s -m POST \
   -d '{"user":"u1","volume":10,"price":3}' \
@@ -269,14 +269,14 @@ tracing\_subscriber::fmt()
 
 iii. 
 ```
-cargo r --release --bin twin
+cargo r --release --bin twn
 
 # send buy request
 curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d "{\"user\":\"u1\",\"volume\":100,\"price\":3}"
 
-2026-06-13T10:08:19  INFO buy{req=Json(BuyRequest { user: "u1", volume: 100, price: 3 })}:buy_impl{buy_req=BuyRequest { user: "u1", volume: 100, price: 3 }}: twin: close time.busy=38.9µs time.idle=31.7µs
+2026-06-13T10:08:19  INFO buy{req=Json(BuyRequest { user: "u1", volume: 100, price: 3 })}:buy_impl{buy_req=BuyRequest { user: "u1", volume: 100, price: 3 }}: twn: close time.busy=38.9µs time.idle=31.7µs
 
-2026-06-13T10:08:19  INFO buy{req=Json(BuyRequest { user: "u1", volume: 100, price: 3 })}: twin: close time.busy=476µs time.idle=33.3µs
+2026-06-13T10:08:19  INFO buy{req=Json(BuyRequest { user: "u1", volume: 100, price: 3 })}: twn: close time.busy=476µs time.idle=33.3µs
 ```
 
 Read the logs — look for `close` lines with `time.busy` and `time.idle` fields
@@ -322,14 +322,14 @@ b. Test
 
 ```bash
 # 1. Start server
-cargo run --bin twin --release
+cargo run --bin twn --release
 
 # 2. Run sustained load (adjust -q or -c to ~60% of your peak RPS, 
 #    see section a above)
 hey -c 30 -q 2400 -z 2h -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy
 
 # 3. Monitor memory every 5 minutes
-ps aux | grep twin
+ps aux | grep twn
 
 # 4. Periodically drain bids to prevent unbounded growth
 curl -s -X POST -d '{"volume":999999999}' -H "Content-Type: application/json" http://localhost:8080/sell

@@ -22,19 +22,19 @@
 
 # Cheat sheet
 ```
-cargo r --bin twin  // run server
-cargo t --bin twin  // run tests
+cargo r --bin twn  // run server
+cargo t --bin twn  // run tests
 
-cargo r --bin twin --release --features disable_logs 
+cargo r --bin twn --release --features disable_logs 
   // e.g. for perf tests
-cargo r --bin twin --release --features enable_tracing_spans 
+cargo r --bin twn --release --features enable_tracing_spans 
 ``` 
 
 ```
 // hot reload
-watchexec -e rs -r -- cargo run --bin twin
-watchexec -e rs -r -- cargo run --bin twin --release
-set RUST_LOG=actix_web=debug && watchexec -e rs -r -- cargo run --bin twin --release
+watchexec -e rs -r -- cargo run --bin twn
+watchexec -e rs -r -- cargo run --bin twn --release
+set RUST_LOG=actix_web=debug && watchexec -e rs -r -- cargo run --bin twn --release
 ```
 
 ```

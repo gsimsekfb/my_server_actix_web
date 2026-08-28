@@ -61,21 +61,21 @@ docker compose restart prometheus
 
 
 ```
-1. API server twin starts
+1. API server twn starts
    → binds 0.0.0.0:8080
    → in-memory metrics recorder initialized (empty)
 
-2. curl POST /buy sent to twin (localhost:8080)
+2. curl POST /buy sent to twn (localhost:8080)
    → buy_impl runs, updates metrics:
        http_requests_total, buy_impl_duration_seconds,
        open_bids_count, supply_current
-   → stored ONLY in twin's process memory
-   → lost if twin restarts
+   → stored ONLY in twn's process memory
+   → lost if twn restarts
 
-3. Prometheus (container, port 9090) scrapes twin's metrics endpoint 
+3. Prometheus (container, port 9090) scrapes twn's metrics endpoint 
    → every 5s (scrape_interval in prometheus.yml)
    → GET http://host.docker.internal:8080/metrics
-   → reads twin's current in-memory snapshot
+   → reads twn's current in-memory snapshot
    → appends a new sample to its own on-disk time series (inside
      the prometheus container's /prometheus data dir)
    → NOT persisted across container removal (no volume mounted
@@ -96,7 +96,7 @@ Summary of where data lives:
 ┌─────────────┬────────────────────────────┬───────────────────────┐
 │ Component    │ What it stores             │ Persistence           │
 ├─────────────┼────────────────────────────┼───────────────────────┤
-│ twin         │ current metric values only │ lost on restart       │
+│ twn         │ current metric values only │ lost on restart       │
 │ (port 8080)  │ (counters/gauges/summary)  │ (in-process RAM)      │
 ├─────────────┼────────────────────────────┼───────────────────────┤
 │ Prometheus   │ full historical time series │ lost on container     │
@@ -107,7 +107,7 @@ Summary of where data lives:
 └─────────────┴────────────────────────────┴───────────────────────┘
 
 Key intervals:
-- Prometheus scrape_interval: 5s  (twin polled this often)
+- Prometheus scrape_interval: 5s  (twn polled this often)
 - Grafana panel refresh: manual, or auto-refresh if set (e.g. 5s)
 - Grafana query min interval: auto-calculated (or set via "Min interval")
 ```
@@ -134,7 +134,7 @@ curl -s -X POST http://localhost:8080/buy -H "Content-Type: application/json" -d
 ```
 
 Narrow the time range in Grafana:     
-To **"Last 15 minutes"** (instead of 6 hours) and click **Run queries** again — if twin was restarted recently, older 6-hour-old data simply doesn't exist to show.  
+To **"Last 15 minutes"** (instead of 6 hours) and click **Run queries** again — if twn was restarted recently, older 6-hour-old data simply doesn't exist to show.  
 
 [Back to top](#contents)
 
@@ -142,10 +142,10 @@ To **"Last 15 minutes"** (instead of 6 hours) and click **Run queries** again �
 
 # Understanding API server's Prometheus logs 
 
-Actix-web's Logger middleware logging every HTTP request twin receives — here, Prometheus scraping /metrics every 5 seconds as configured.
+Actix-web's Logger middleware logging every HTTP request twn receives — here, Prometheus scraping /metrics every 5 seconds as configured.
 
 ```log
-     Running `target/debug/twin`
+     Running `target/debug/twn`
 
 -- Server starting on localhost:8080 ...
 ...
@@ -272,7 +272,7 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'twin'
+  - job_name: 'twn'
     # "static": hardcoding the target list (vs. dynamic service discovery 
     # like Kubernetes/Consul, which auto-populates targets 
     static_configs:
@@ -297,7 +297,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
-    # let prometheus container reach host (WSL2 twin) by hostname
+    # let prometheus container reach host (WSL2 twn) by hostname
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -321,7 +321,7 @@ volumes:
 ## Run API server and Prometheus + Grafana containers
 
 ```bash
-cargo r --bin twin
+cargo r --bin twn
 docker compose up -d
 
 # API server's metrics endpoint

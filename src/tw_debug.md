@@ -35,10 +35,10 @@ Enable in main.rs:
 ```
 
 ```
-set RUST_LOG=debug cargo r --bin twin
+set RUST_LOG=debug cargo r --bin twn
 ```
 ```
-set RUST_LOG=debug && cargo r --bin twin    // windows
+set RUST_LOG=debug && cargo r --bin twn    // windows
 ```
 ```
 [2026-08-18T07:49:46Z INFO  actix_server::builder] starting 2 workers
@@ -96,7 +96,7 @@ curl -is http://localhost:8080/btc-price
 
 Related logs:  
 ```rust
-RUST_LOG=debug cargo r --bin twin
+RUST_LOG=debug cargo r --bin twn
 
 -- Server starting on localhost:8080 ...
 

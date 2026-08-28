@@ -1,7 +1,7 @@
 syntax = "proto3";
-package twin;
+package twn;
 
-service Twin {
+service twn {
     rpc Buy (BuyRequest) returns (BuyResponse);
     rpc Sell (SellRequest) returns (SellResponse);
     rpc GetAllocation (AllocationRequest) returns (AllocationResponse);

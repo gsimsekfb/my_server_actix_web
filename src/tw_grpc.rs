@@ -8,9 +8,10 @@ use std::sync::Arc;
 use crate::tw_main::{AppState, BuyRequest as InnerBuyRequest, SellRequest as InnerSellRequest,
     buy_impl, sell_impl, ordered_locks_buy, ordered_locks_sell};
 
-pub mod twin_proto {
+#[allow(clippy::result_large_err)]
+pub mod twn_proto {
     // Include generated Rust structs/traits from compiled .proto at build time
-    tonic::include_proto!("twin");
+    tonic::include_proto!("twn");
 
     // Embed the raw compiled descriptor bytes (built by prost-build/tonic-build 
     // with descriptor output enabled) into the binary as a static byte array.
@@ -18,21 +19,21 @@ pub mod twin_proto {
     // Compiled binary blob (from .proto file) describing gRPC service's schema
     // (messages, methods)
     pub const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("twin_descriptor");
+        tonic::include_file_descriptor_set!("twn_descriptor");
 }
 
-use twin_proto::{
-    twin_server::{Twin, TwinServer},
+use twn_proto::{
+    twn_server::{Twn, TwnServer},
     BuyRequest, BuyResponse, SellRequest, SellResponse,
     AllocationRequest, AllocationResponse,
 };
 
-pub struct TwinGrpcService {
+pub struct TwnGrpcService {
     pub state: Arc<AppState>,
 }
 
 #[tonic::async_trait]
-impl Twin for TwinGrpcService {
+impl Twn for TwnGrpcService {
 
     /// Note: BuyRequest auto generated from proto file
     async fn buy(&self, req: Request<BuyRequest>) -> Result<Response<BuyResponse>, Status> {
@@ -74,8 +75,8 @@ impl Twin for TwinGrpcService {
     }
 }
 
-pub fn make_grpc_server(state: Arc<AppState>) -> TwinServer<TwinGrpcService> {
-    TwinServer::new(TwinGrpcService { state })
+pub fn make_grpc_server(state: Arc<AppState>) -> TwnServer<TwnGrpcService> {
+    TwnServer::new(TwnGrpcService { state })
 }
 
 /// Feeds raw compiled descriptor bytes into the reflection server so tools 
@@ -84,7 +85,7 @@ pub fn make_grpc_server(state: Arc<AppState>) -> TwinServer<TwinGrpcService> {
 /// e.g. grpcurl -plaintext localhost:50051 list
 pub fn make_reflection_service() -> ServerReflectionServer<impl ServerReflection> {
     tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(twin_proto::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(twn_proto::FILE_DESCRIPTOR_SET)
         .build_v1()
         .expect("-- gRPC: Panicking, reflection-service init failure")
 }

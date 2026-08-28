@@ -58,7 +58,7 @@ harness = false
 four_forward_slashes = "allow"
 
 [[bin]]
-name = "twin"
+name = "twn"
 path = "src/tw_main_fn.rs"
 
 # [[bin]]

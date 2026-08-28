@@ -1,4 +1,4 @@
-# Twin Coding Exercise — Assignment
+# Twn Coding Exercise — Assignment
 
 This is a small, self-contained exercise to assess Rust fundamentals, concurrency thinking, API discipline, and your engineering taste. The **baseline** is intentionally compact; you can **push it as far as you like** with tests, docs, tooling, and performance work.
 
@@ -70,8 +70,8 @@ Use the exact endpoints and shapes (all JSON):
 
 ## 3) Provided Skeleton
 
-You’ll receive a crate named `twin_programming_assignment` with `src/main.rs` containing the three endpoints and **TODO** markers. You may refactor, add modules, and tests, but **do not**:
-- change the crate name (`twin_programming_assignment`),
+You’ll receive a crate named `twn_programming_assignment` with `src/main.rs` containing the three endpoints and **TODO** markers. You may refactor, add modules, and tests, but **do not**:
+- change the crate name (`twn_programming_assignment`),
 - change the binary name (must build with `cargo build` without renaming),
 - change endpoint paths or request/response shapes.
 
@@ -147,13 +147,13 @@ To help us understand *your* thinking (and to discourage generic boilerplate), p
 
 ## 8) Submission
 
-- Archive a **single directory named `twin_programming_assignment/`** (the crate root) into `twin_programming_assignment.zip` or `twin_programming_assignment.tar.gz`.  
+- Archive a **single directory named `twn_programming_assignment/`** (the crate root) into `twn_programming_assignment.zip` or `twn_programming_assignment.tar.gz`.  
 - The project should build and run with:
   ```bash
   cargo build
   cargo run
   ```
-- Include any extra files (README, tests, scripts) inside `twin_programming_assignment/`.
+- Include any extra files (README, tests, scripts) inside `twn_programming_assignment/`.
 
 ---
 

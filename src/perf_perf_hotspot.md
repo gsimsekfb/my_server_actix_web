@@ -2,7 +2,7 @@
 
 ## Contents
 1. [Steps to get perf.data](#1-steps-to-get-perfdata)
-2. [Perf Report - Profiling Twin Program](#2-perf-report---profiling-twin-program)
+2. [Perf Report - Profiling Twn API Server](#2-perf-report---profiling-twn-program)
 3. [Line by Line Profiling](#3-line-by-line-profiling)
 4. [Hotspot](#4-hotspot)
 5. [Profiling Results](#5-profiling-results)
@@ -10,11 +10,11 @@
 
 ## 1. Steps to get perf.data
 
-Profiling "twin" executable:
+Profiling "twn" executable:
 ```bash
-RUSTC_WRAPPER="" CARGO_PROFILE_RELEASE_DEBUG=true cargo r--release --bin twin
+RUSTC_WRAPPER="" CARGO_PROFILE_RELEASE_DEBUG=true cargo r--release --bin twn
 
-perf record -F 999 -g -p $(pgrep twin) -- sleep 10
+perf record -F 999 -g -p $(pgrep twn) -- sleep 10
     // perf might be here: 
     // /usr/lib/linux-tools/5.15.0-186-generic/perf
     // -F 999: sampling freq. 999 Hz (samples/sec)
@@ -33,7 +33,7 @@ done
 [↑ Back to top](#contents)
 
 
-## 2. perf report - profiling twin program
+## 2. perf report - profiling twn program
 
 ```
 perf report   
@@ -47,15 +47,15 @@ Samples: 19K of event 'cycles', Event count (approx.): 40744335545
   Children      Self  Command          Shared Object      Symbol
 +   48.45%     0.03%  actix-rt|system  [kernel.kallsyms]  [k] 0xffffffff9f200134
 +   47.30%     0.05%  actix-rt|system  [kernel.kallsyms]  [k] 0xffffffff9f0785aa
-+   37.94%     0.16%  actix-rt|system  twin               [.] <&mio::net::tcp::stream::TcpStream as st
++   37.94%     0.16%  actix-rt|system  twn               [.] <&mio::net::tcp::stream::TcpStream as st
 +   37.75%     0.27%  actix-rt|system  libc.so.6          [.] __send
 
 ...
 
-+    1.20%     1.11%  actix-rt|system  twin               [.] actix_hello::tw_main::buy_impl        
-     1.20%     1.18%  actix-rt|system  twin               [.] <actix_http::requests::request::Reques
++    1.20%     1.11%  actix-rt|system  twn               [.] actix_hello::tw_main::buy_impl        
+     1.20%     1.18%  actix-rt|system  twn               [.] <actix_http::requests::request::Reques
 +    1.18%     1.18%  actix-rt|system  libc.so.6          [.] malloc                                
-     1.12%     0.93%  actix-rt|system  twin               [.] actix_web::handler::handler_service::
+     1.12%     0.93%  actix-rt|system  twn               [.] actix_web::handler::handler_service::
 
 ```
 
@@ -78,7 +78,7 @@ Use key "/" to search "buy_impl", enter on the found line, and annotate to get t
 
 ```
 Samples: 217  of event 'cycles', 999 Hz, Event count (approx.): 450696749
-actix_hello::tw_main::buy_impl  /mnt/c/code/be/actix_hello/target/release/twin [Percent: local period]
+actix_hello::tw_main::buy_impl  /mnt/c/code/be/actix_hello/target/release/twn [Percent: local period]
 Percent│                                                                               
        │     Disassembly of section .text:                                             
        │                                                                                      │     00000000003e4340 <actix_hello::tw_main::buy_impl>:                               │     actix_hello::tw_main::buy_impl:                                           
@@ -174,7 +174,7 @@ Based on this profiling session:
 
 1. **Tracing overhead** — `#[instrument]` on `buy_impl` adds \~10-12% overhead per the earlier `perf annotate` output; gate it behind a feature flag or remove it from the hot path in production builds.
 2. **BTreeMap key comparison dominates real business logic** — confirms your `tw_perf_optimization.md` "Next" item (swap `bids` to DashMap/lock-free) is correctly prioritized, not premature.
-3. **Symbol resolution is too degraded to trust further micro-conclusions** — `twin` is missing 63/4885 debug symbols and kernel symbols aren't resolving at all in WSL2; before chasing more leads (like the `send`/socket buffer confusion), rebuild with `CARGO_PROFILE_RELEASE_DEBUG=true` and `debug-assertions=false`, and try `sudo sysctl kernel.kptr_restrict=0` to get real kernel-space attribution.
+3. **Symbol resolution is too degraded to trust further micro-conclusions** — `twn` is missing 63/4885 debug symbols and kernel symbols aren't resolving at all in WSL2; before chasing more leads (like the `send`/socket buffer confusion), rebuild with `CARGO_PROFILE_RELEASE_DEBUG=true` and `debug-assertions=false`, and try `sudo sysctl kernel.kptr_restrict=0` to get real kernel-space attribution.
 4. **Verify `hey`'s connection reuse** — if it's opening a new TCP connection per request instead of keep-alive, that would explain inflated `send`/socket-related syscall percentages that have nothing to do with `buy_impl` itself; add `-disable-keepalive=false` (default) confirmation or check with `hey`'s docs, since this could be inflating your load test numbers independent of server code quality.
 5. **Allocation churn** (`malloc`/`free`/`dealloc_nonnull` \~3-4% combined) — `user.clone()` in `buy_impl` on every CAS retry is avoidable; consider `Arc<str>` for `user` to make clones cheap, or restructure to clone once.
 

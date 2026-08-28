@@ -4,7 +4,7 @@ REST:
 External/public clients (browsers, mobile apps, third-party integrators) hit the REST/HTTP API since it's simpler to consume and debug.
 
 gRPC:  
-Internal services within our own infrastructure (e.g. a settlement service, a risk-check service, an analytics pipeline) would call twin over gRPC since it's faster and gives strict typed contracts between services you control.
+Internal services within our own infrastructure (e.g. a settlement service, a risk-check service, an analytics pipeline) would call twn over gRPC since it's faster and gives strict typed contracts between services you control.
 
 # Adding gRPC Layer
 
@@ -16,17 +16,17 @@ Adding a gRPC layer as a second interface reusing the same `buy_impl`/`sell_impl
 
 
 ```sh
-cargo r --bin twin
+cargo r --bin twn
 ```
 
 ```
-grpcurl -plaintext -d '{"volume":250}' localhost:50051 twin.Twin/Sell
+grpcurl -plaintext -d '{"volume":250}' localhost:50051 twn.twn/Sell
 ```
 ```
-grpcurl -plaintext -d '{"user":"u1","volume":100,"price":3}' localhost:50051 twin.Twin/Buy
+grpcurl -plaintext -d '{"user":"u1","volume":100,"price":3}' localhost:50051 twn.twn/Buy
 ```
 ```sh
-grpcurl -plaintext -d '{"username":"u1"}' localhost:50051 twin.Twin/GetAllocation
+grpcurl -plaintext -d '{"username":"u1"}' localhost:50051 twn.twn/GetAllocation
 ```
 ```
     {
@@ -41,16 +41,16 @@ grpcurl -plaintext localhost:50051 list
 ```
 ```
     grpc.reflection.v1.ServerReflection
-    twin.Twin
+    twn.Twn
 ```
 
 ```
-grpcurl -plaintext localhost:50051 list twin.Twin
+grpcurl -plaintext localhost:50051 list twn.Twn
 ```
 ```
-    twin.Twin.Buy
-    twin.Twin.GetAllocation
-    twin.Twin.Sell
+    twn.Twn.Buy
+    twn.Twn.GetAllocation
+    twn.Twn.Sell
 ```
 
 

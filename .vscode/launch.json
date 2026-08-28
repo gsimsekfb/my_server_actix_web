@@ -5,12 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "twin",
+            "name": "twn",
             "type": "lldb",
             "request": "launch",
             "sourceLanguages": ["rust"],
             "cargo": {
-                "args": ["build", "--bin", "twin"],
+                "args": ["build", "--bin", "twn"],
             },
             "args": [],
             // "env":{"NODE_ENV": "test"},

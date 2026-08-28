@@ -22,7 +22,7 @@ curl -s -X POST http://localhost:8080/buy -H "Authorization: Bearer eyJh..."
 curl -H "API-Version: 1" http://localhost:8080/buy
 
 # Using accept header
-curl -H "Accept: application/vnd.twin.v2+json" http://localhost:8080/buy
+curl -H "Accept: application/vnd.twn.v2+json" http://localhost:8080/buy
 ```
 
 

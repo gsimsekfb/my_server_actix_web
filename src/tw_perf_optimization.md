@@ -23,7 +23,7 @@ under concurrent load while maintaining correctness guarantees.
 Quick Cmds Reference:   
 ```
 // Server   
-RUSTC_WRAPPER="" cargo r --release --bin twin
+RUSTC_WRAPPER="" cargo r --release --bin twn
 
 // Client  
 hey -c 10 -z 10s -m POST -d '{"user":"u1","volume":10,"price":3}' -H "Content-Type: application/json" http://localhost:8080/buy

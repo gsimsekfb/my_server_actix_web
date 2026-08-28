@@ -3,7 +3,7 @@ global:
   scrape_interval: 5s   # from API server
 
 scrape_configs:
-  - job_name: 'twin'
+  - job_name: 'twn'
     # "static": hardcoding the target list (vs. dynamic service discovery 
     # like Kubernetes/Consul, which auto-populates targets 
     static_configs:
