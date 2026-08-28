@@ -1,0 +1,29 @@
+# docker-compose.yml
+services:
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    volumes:
+      # bind mount <WSL:container>. 
+      # Changes to ./prometheus.yml are visible in container immediately
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    # let prometheus container reach host (WSL2 API server) by hostname
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:13.2.0
+    ports:
+      - "3000:3000"
+    volumes:
+    # Save Grafana data e.g. dashboard, panel etc..
+    # named volume
+    # "grafana_data" is just a name — Docker creates & manages the actual
+    # storage location for you instead of you specifying, hidden under:
+    # /var/lib/docker/volumes/<project>_grafana_data/_data
+      - grafana_data:/var/lib/grafana
+
+# Declare grafana_data as a named volume for Docker to create and manage
+volumes:
+  grafana_data:

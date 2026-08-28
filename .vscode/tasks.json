@@ -4,20 +4,17 @@
         {
             "label": "test-all",
             "type": "shell",
-            "command": "wsl",
-            "args": ["bash", "-lc", "cargo test --workspace --all-targets --all-features -j 6"]
+            "command": "cargo test --workspace --all-targets --all-features -j 6"
         },
         {
             "label": "clippy",
             "type": "shell",
-            "command": "wsl",
-            "args": ["bash", "-lc", "cargo clippy --workspace --all-targets --all-features -j 6"]
+            "command": "cargo clippy --workspace --all-targets --all-features -j 6"
         },
         {
             "label": "bench-build",
             "type": "shell",
-            "command": "wsl",
-            "args": ["bash", "-lc", "cargo bench --no-run -j 6"]
+            "command": "cargo bench --no-run -j 6"
         }
     ]
 }

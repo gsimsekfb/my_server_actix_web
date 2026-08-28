@@ -2,12 +2,14 @@ use actix_web::{
     App, Error, HttpRequest, HttpResponse, HttpServer, Responder, Result, body::MessageBody, dev::{ServiceRequest, ServiceResponse}, error, get, middleware::{Logger, Next, from_fn}, post, web
 };
 use dashmap::DashMap;
+use metrics::{counter, gauge, histogram};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use std::{
     cmp::Reverse, collections::BTreeMap, sync::{
         Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard, atomic::{AtomicU64, Ordering}
-    }
+    },
+    time::Instant
 };
 
 use super::tw_auth::decode_jwt;
@@ -200,6 +202,9 @@ pub fn buy_impl(
     bids: &mut BTreeMap<PriceSeqPair, Bid>, 
     buy_req: BuyRequest
 ) {
+    // metrics
+    let start = Instant::now();
+
     let BuyRequest {user, volume, price} = buy_req;
 
     // 0. Increment request_no
@@ -218,6 +223,15 @@ pub fn buy_impl(
                 (Reverse(price), seq), 
                 Bid::new(user.clone(), volume, price, seq)
             );
+
+            // metrics — early-exit path
+            // todo: use RAII e.g. BuyMetricsGuard fn drop
+            histogram!("buy_impl_duration_seconds")
+                .record(start.elapsed().as_secs_f64());
+            counter!("http_requests_total", "endpoint" => "buy").increment(1);
+            gauge!("open_bids_count").set(bids.len() as f64);
+            gauge!("supply_current").set(supply.load(Ordering::Relaxed) as f64);
+
             return;
         }
 
@@ -252,8 +266,13 @@ pub fn buy_impl(
         }
     } // end of CAS loop
 
+    // metrics
+    histogram!("buy_impl_duration_seconds")
+        .record(start.elapsed().as_secs_f64());
+    counter!("http_requests_total", "endpoint" => "buy").increment(1);
+    gauge!("open_bids_count").set(bids.len() as f64);
+    gauge!("supply_current").set(supply.load(Ordering::Relaxed) as f64);
 }
-
 
 /* 
 curl -s -X POST localhost:8080/sell -H "Content-Type: application/json" -d "{\"volume\":500}"

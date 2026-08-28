@@ -10,7 +10,7 @@ Internal services within our own infrastructure (e.g. a settlement service, a ri
 
 Adding a gRPC layer as a second interface reusing the same `buy_impl`/`sell_impl` business logic:  
 
-<p align="center"><img src="../images/system_architecture.png" width="600" alt=">> image <<": ></p>
+<p align="center"><img src="../images/system_architecture.jpg" width="600" alt=">> image <<": ></p>
 
 ## Cheatsheet:
 

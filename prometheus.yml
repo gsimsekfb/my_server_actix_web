@@ -1,0 +1,17 @@
+# prometheus.yml
+global:
+  scrape_interval: 5s   # from API server
+
+scrape_configs:
+  - job_name: 'twin'
+    # "static": hardcoding the target list (vs. dynamic service discovery 
+    # like Kubernetes/Consul, which auto-populates targets 
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        # ↑ list — could have multiple, e.g. if you ran
+        #   several API server instances for load balancing:
+        # targets: ['host.docker.internal:8080', 'host.docker.internal:8081']
+
+# Note
+# For this version, no volume mounted for Prometheus, so scraped history is 
+# lost on docker-compose down
