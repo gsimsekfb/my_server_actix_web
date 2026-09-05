@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-disable_logs = []
 enable_tracing_spans = []
+disable_logs = []
+disable_metrics = []
 
 # Enable "debug .." line for faster incr. builds
 #

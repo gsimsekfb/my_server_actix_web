@@ -1,4 +1,5 @@
 use actix_web::{App, HttpServer, web};
+#[cfg(not(feature = "disable_metrics"))]
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tonic::transport::Server as GrpcServer;
 
@@ -7,6 +8,7 @@ use actix_hello::{tw_grpc, tw_main::*};
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // create in-memory metrics recorder + register as global
+    #[cfg(not(feature = "disable_metrics"))]
     let prometheus_handle = PrometheusBuilder::new()
         .install_recorder()
         .expect("failed to install Prometheus recorder");
@@ -45,8 +47,8 @@ async fn main() -> std::io::Result<()> {
     //// 1. HTTP server
     // closure will be run per worker thread (at startup), default workers: 8
     let http_server = HttpServer::new(move || { // move app_state into the closure
-        let handle = prometheus_handle.clone();
-        App::new()
+        #[allow(unused_mut)]
+        let mut app = App::new()
             .app_data(app_state.clone()) // register the created data
             .route("/", web::get().to(index))
             .service(sell)
@@ -54,16 +56,25 @@ async fn main() -> std::io::Result<()> {
             .service(allocation)
             .service(buy_v2)
             .service(btc_price)
-            .route("/metrics", web::get().to(move || {
-                let handle = handle.clone();
-                async move { handle.render() }
-            }))
             .wrap(actix_web::middleware::Condition::new(
                 cfg!(not(feature = "disable_logs")),
                 actix_web::middleware::Logger::default(),
-            ))
+            ));
             // enable/use while debugging
             // .wrap(actix_web::middleware::from_fn(my_middleware))
+
+            #[cfg(not(feature = "disable_metrics"))]
+            {
+                let handle = prometheus_handle.clone();
+                let metrics_route = web::resource("/metrics")
+                    .route(web::get().to(move || {
+                        let handle = handle.clone();
+                        async move { handle.render() }
+                    }));
+                app = app.service(metrics_route);
+            }
+
+            app
     })
     .workers(2)
     .bind(("0.0.0.0", 8080))?

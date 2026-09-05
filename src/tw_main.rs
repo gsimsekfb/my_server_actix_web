@@ -224,13 +224,8 @@ pub fn buy_impl(
                 Bid::new(user.clone(), volume, price, seq)
             );
 
-            // metrics — early-exit path
-            // todo: use RAII e.g. BuyMetricsGuard fn drop
-            histogram!("buy_impl_duration_seconds")
-                .record(start.elapsed().as_secs_f64());
-            counter!("http_requests_total", "endpoint" => "buy").increment(1);
-            gauge!("open_bids_count").set(bids.len() as f64);
-            gauge!("supply_current").set(supply.load(Ordering::Relaxed) as f64);
+            #[cfg(not(feature = "disable_metrics"))]
+            metrics_buy_impl(start, bids.len(), supply.load(Ordering::Relaxed));
 
             return;
         }
@@ -266,12 +261,22 @@ pub fn buy_impl(
         }
     } // end of CAS loop
 
-    // metrics
+    #[cfg(not(feature = "disable_metrics"))]
+    metrics_buy_impl(start, bids.len(), supply.load(Ordering::Relaxed));
+}
+
+/// todo: enforce the following usage e.g. w/ macro, or w/ other ways:
+///    #[cfg(not(feature = "disable_metrics"))]
+///    metrics_buy_impl(...);
+/// in short, we do not want metrics_buy_impl(...) w/o this feature flag
+/// 
+/// todo: move all these to tw_metrics.rs
+fn metrics_buy_impl(start: Instant, bids_len: usize, supply: u64) {
     histogram!("buy_impl_duration_seconds")
         .record(start.elapsed().as_secs_f64());
     counter!("http_requests_total", "endpoint" => "buy").increment(1);
-    gauge!("open_bids_count").set(bids.len() as f64);
-    gauge!("supply_current").set(supply.load(Ordering::Relaxed) as f64);
+    gauge!("open_bids_count").set(bids_len as f64);
+    gauge!("supply_current").set(supply as f64);
 }
 
 /* 
