@@ -1,7 +1,7 @@
 
-# Tw Metrics - Prometheus & Grafana
+# Twn Metrics - Prometheus & Grafana
 
-<p align="center"><img src="../images/grafana.jpg" alt=">> image <<": ></p>
+<p align="center"><img src="../images/observ_grafana.jpg" alt=">> image <<": ></p>
 
 
 
@@ -52,12 +52,12 @@ docker compose restart prometheus
 # Architecture
 
 
-<p align="center"><img src="../images/observability metrics architecture.jpg" alt=">> image <<": ></p>
+<p align="center"><img src="../images/observ_metrics.jpg" alt=">> image <<": ></p>
 
 
 > More detailed view:
 
-<p align="center"><img src="../images/observability metrics architecture - detailed.jpg" alt=">> image <<": ></p>
+<p align="center"><img src="../images/observ_metrics_big.jpg" alt=">> image <<": ></p>
 
 
 ```

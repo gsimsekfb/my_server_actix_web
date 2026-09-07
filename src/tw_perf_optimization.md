@@ -7,9 +7,11 @@
 
 [Environment](#environment)  
 [Next](#next)  
-[Details](#details)  
+[Full Result of Hey Perf Session](#full-result-of-hey-perf-session)  
+[Metrics Impact & Optimization](#metrics-impact--optimization)  
 
 ==============================================
+
 
 ## Goals
 
@@ -158,7 +160,7 @@ perf annotate --symbol=actix_hello::tw_main::buy
 [↑ Back to top](#contents)
 
     
-## Details
+## Full Result of Hey Perf Session
 
 v0
 ```
@@ -209,3 +211,49 @@ Status code distribution:
 ```
 
 [↑ Back to top](#contents)
+
+
+## Metrics Impact & Optimization
+
+[WIP]
+
+### Optimization
+
+- keep cheap metrics always enabled
+- avoid expensive work on extremely hot paths
+- cache metric/label handles rather than repeatedly looking them up
+- use sampling for high-volume tracing
+- disable only particularly expensive instrumentation when necessary
+
+
+### Measuring Impact
+
+| Test                            | Metrics  | Purpose                                              |
+| ------------------------------- | -------- | ---------------------------------------------------- |
+| **A. Baseline**                 | OFF      | Measure pure API performance                         |
+| **B. Production-like**          | ON       | Measure performance users actually get in production |
+| **C. Instrumentation overhead** | ON − OFF | Quantify metrics' cost                               |
+
+OpenTelemetry makes the same basic point: instrumentation has CPU/memory cost and can directly affect throughput and latency, so that overhead should itself be measured.
+
+---
+
+```text
+                 ┌── metrics OFF ──► baseline
+hey ──► API ─────┤
+                 └── metrics ON  ──► production-like
+                         │
+                         └── compare
+```
+
+
+```text
+cargo r --release
+cargo r --release --features disable_metrics
+```
+
+Benchmark results:
+
+> Baseline:  X req/s, Y ms p99
+> With metrics: X req/s, Y ms p99
+> Metrics overhead: Z%
