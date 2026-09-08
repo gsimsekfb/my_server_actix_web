@@ -1,7 +1,11 @@
 use actix_web::{App, HttpServer, web};
 #[cfg(not(feature = "disable_metrics"))]
 use metrics_exporter_prometheus::PrometheusBuilder;
+use opentelemetry::trace::TracerProvider;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_otlp::SpanExporter;
 use tonic::transport::Server as GrpcServer;
+use tracing_subscriber::prelude::*;
 
 use actix_hello::{tw_grpc, tw_main::*};
 
@@ -31,12 +35,29 @@ async fn main() -> std::io::Result<()> {
     // For profiling w/ tracing spans - see tw_perf_testing.md for more
     // Note: should not be used when the env_logger is enabled
     if cfg!(feature = "enable_tracing_spans") {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("info".parse().unwrap())
-            )
-            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        let exporter = SpanExporter::builder().with_tonic().build()
+            // note: using OTLP exporter's default endpoint (localhost:4317)
+            // todo: use explicit endpoint w/ `.with_endpoint(...)` 
+            //       or
+            //       OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317   
+            .expect("failed to build OTLP exporter");
+        let provider = SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
+            .build();
+            // todo/note: no provider.shutdown() (or equivalent flush) is'
+            // called anywhere on server shutdown, so the last in-flight 
+            // batch of spans can be dropped at exit.
+        let tracer = provider.tracer("twn");
+
+        // From the same spans, get both console output and OTLP export:
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("info".parse().unwrap()))
+            // - console output
+            .with(tracing_subscriber::fmt::layer()
+                .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE))
+            // - OTLP export
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .init();
     }
 

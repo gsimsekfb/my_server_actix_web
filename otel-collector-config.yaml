@@ -1,0 +1,24 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+# todo: Consider enabling batch. Currently, pipeline has no processors 
+#       (e.g. batch), so every span exported to Tempo unbatched.
+#       Especially for perf. reasons.
+# 
+# processors:
+#  batch:
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true # todo: not production-safe
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp/tempo]

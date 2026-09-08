@@ -24,6 +24,23 @@ services:
     # /var/lib/docker/volumes/<project>_grafana_data/_data
       - grafana_data:/var/lib/grafana
 
+  # observ-v2: Adding OpenTelemetry tracing
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "4317:4317" # OTLP gRPC
+
+  tempo:
+    image: grafana/tempo:2.7.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+    ports:
+      - "3200:3200" # Tempo query API
+
 # Declare grafana_data as a named volume for Docker to create and manage
 volumes:
   grafana_data:
