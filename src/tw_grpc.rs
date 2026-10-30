@@ -5,8 +5,13 @@ use tonic_reflection::pb::v1::server_reflection_server::{
 
 use std::sync::Arc;
 
-use crate::tw_main::{AppState, BuyRequest as InnerBuyRequest, SellRequest as InnerSellRequest,
-    buy_impl, sell_impl, ordered_locks_buy, ordered_locks_sell};
+use crate::tw_main::{
+    ActiveStorage,
+    AppState, BuyRequest as TwnBuyRequest, SellRequest as TwnSellRequest,
+    buy_impl, sell_impl
+};
+
+use crate::tw_matching_engine_trait::TwnEngine;
 
 #[allow(clippy::result_large_err)]
 pub mod twn_proto {
@@ -38,14 +43,9 @@ impl Twn for TwnGrpcService {
     /// Note: BuyRequest auto generated from proto file
     async fn buy(&self, req: Request<BuyRequest>) -> Result<Response<BuyResponse>, Status> {
         let buy_req = req.into_inner();
-        let mut bids = ordered_locks_buy(&self.state);
-        buy_impl(
-            &self.state.buy_seq_no,
-            &self.state.supply,
-            &self.state.allocations,
-            &mut bids,
-            InnerBuyRequest::new(buy_req.user, buy_req.volume, buy_req.price),
-        );
+        let req = TwnBuyRequest::new(buy_req.user, buy_req.volume, buy_req.price);
+        self.state.storage.buy(req).await;
+
         Ok(Response::new(BuyResponse {}))
     }
 
@@ -53,15 +53,9 @@ impl Twn for TwnGrpcService {
         if req.get_ref().volume == 0 {
             return Err(Status::invalid_argument("volume must be greater than 0"));
         }
+        let req = TwnSellRequest { volume:  req.into_inner().volume };
+        self.state.storage.sell(req).await;
 
-        let sell_req = req.into_inner();
-        let mut bids = ordered_locks_sell(&self.state);
-        sell_impl(
-            &self.state.supply,
-            &self.state.allocations,
-            &mut bids,
-            InnerSellRequest { volume: sell_req.volume },
-        );
         Ok(Response::new(SellResponse {}))
     }
 
@@ -69,8 +63,9 @@ impl Twn for TwnGrpcService {
         &self, req: Request<AllocationRequest>
     ) -> Result<Response<AllocationResponse>, Status> {
         let req = req.into_inner();
-        let volume = 
-            self.state.allocations.get(&req.username).map(|v| *v).unwrap_or(0);
+        let volume = self.state.storage.allocation(&req.username).await
+            .unwrap_or_default();
+
         Ok(Response::new(AllocationResponse { volume }))
     }
 }

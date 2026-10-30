@@ -1,5 +1,16 @@
 # docker-compose.yml
 services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: twn
+      POSTGRES_PASSWORD: twn
+      POSTGRES_DB: twn
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   prometheus:
     image: prom/prometheus:v3.14.0
     volumes:
@@ -17,12 +28,11 @@ services:
     ports:
       - "3000:3000"
     volumes:
-    # Save Grafana data e.g. dashboard, panel etc..
-    # named volume
-    # "grafana_data" is just a name — Docker creates & manages the actual
-    # storage location for you instead of you specifying, hidden under:
-    # /var/lib/docker/volumes/<project>_grafana_data/_data
       - grafana_data:/var/lib/grafana
+      # a named volume - save Grafana data in it e.g. dashboard, panel etc..
+      # "grafana_data" is just a name — Docker creates & manages the actual
+      # storage location for you instead of you specifying, hidden under:
+      # /var/lib/docker/volumes/<project>_grafana_data/_data
 
   # observ-v2: Adding OpenTelemetry tracing
   otel-collector:
@@ -41,6 +51,8 @@ services:
     ports:
       - "3200:3200" # Tempo query API
 
-# Declare grafana_data as a named volume for Docker to create and manage
 volumes:
+  postgres_data:
   grafana_data:
+    # Declare grafana_data as a named volume for Docker to create and manage
+

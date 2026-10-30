@@ -29,9 +29,15 @@ That's `curl` verbose output showing the request lifecycle:
 
 ### a. env_logger crate
 
-Enable in main.rs:   
+Enable in main.rs:    
+
+`env_logger` reads the RUST_LOG to set logging levels which are:  
+`error, warn, info, debug, trace`
+
 ```rust
-    env_logger::init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info")
+    ).init();
 ```
 
 ```

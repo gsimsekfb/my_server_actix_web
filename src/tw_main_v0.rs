@@ -307,7 +307,7 @@ fn allocation_impl(
     allocations.get(&req.username).as_deref()
         .copied()  // Option<&u64> to Option<64>
         // Option to Result
-        .ok_or_else(|| error::ErrorBadRequest("missing username\n"))
+        .ok_or_else(|| error::ErrorBadRequest("username not found\n"))
 
     // or more readable:
     //

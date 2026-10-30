@@ -23,14 +23,16 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Simple logger - see tw_debug.md for more
-    // Note: should not be enabled w/ tracing spans feature
+    // Note: should not be enabled w/ tracing spans feature as enforced below
     if cfg!(
         all(not(feature = "disable_logs"), not(feature = "enable_tracing_spans"))
     ){
+        // RUST_LOG: error, warn, info, debug, trace
         env_logger::Builder::from_env(
             env_logger::Env::default().default_filter_or("info")
         ).init();
     }
+    println!("-- log level: {}", log::max_level());
 
     // For profiling w/ tracing spans - see tw_perf_testing.md for more
     // Note: should not be used when the env_logger is enabled
@@ -61,9 +63,24 @@ async fn main() -> std::io::Result<()> {
             .init();
     }
 
+    let storage = {
+        #[cfg(not(feature = "postgres"))]
+        {
+            use actix_hello::tw_storage_in_memory::InMemoryStorage as ActiveStorage;
+            ActiveStorage::default()
+        }
+        #[cfg(feature = "postgres")] 
+        {
+            use actix_hello::tw_storage_postgres::PostgresStorage as ActiveStorage;
+            ActiveStorage::connect(
+                &std::env::var("DATABASE_URL").expect("DATABASE_URL not set")
+            ).await
+        }
+    };
+
     // web::Data<T> is struct Data<T>(Arc<T>)
-    let app_state = web::Data::new( AppState::default() );
-    let grpc_state = app_state.clone().into_inner(); // Arc<AppState>
+    let app_state = web::Data::new( AppState { storage } );
+    let app_state_clone = app_state.clone().into_inner(); // Arc<AppState>
 
     //// 1. HTTP server
     // closure will be run per worker thread (at startup), default workers: 8
@@ -115,7 +132,7 @@ async fn main() -> std::io::Result<()> {
 
     //// 2. gRPC server (unchanged)
     let grpc_service = GrpcServer::builder()
-        .add_service(tw_grpc::make_grpc_server(grpc_state))
+        .add_service(tw_grpc::make_grpc_server(app_state_clone))
         .add_service(tw_grpc::make_reflection_service());
 
     let grpc_handle = tokio::spawn(async move {

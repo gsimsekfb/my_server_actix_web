@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Claims {
-    sub: String,
+    // sub: String, // todo: test and remove
     pub features: Vec<String>,
 }
 

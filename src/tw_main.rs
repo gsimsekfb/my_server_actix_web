@@ -12,10 +12,19 @@ use std::{
     time::Instant
 };
 
+use crate::tw_matching_engine_trait::TwnEngine;
+
 use super::tw_auth::decode_jwt;
 use super::tw_error::ErrorResponse;
 use super::tw_err_circuit_breaker::{PriceFeed, PriceFeedError};
+use super::tw_storage_in_memory::{
+    InMemoryStorage, ordered_locks_buy, ordered_locks_sell
+};
 
+#[cfg(feature = "postgres")]
+pub use super::tw_storage_postgres::PostgresStorage as ActiveStorage;
+#[cfg(not(feature = "postgres"))]
+pub use super::tw_storage_in_memory::InMemoryStorage as ActiveStorage;
 
 /// Topics
 /// 1. Lock order - deadlock prevention enforced with fns and with AI pre-commit hook
@@ -44,7 +53,7 @@ use super::tw_err_circuit_breaker::{PriceFeed, PriceFeedError};
 //// ------ Requests
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct BuyRequest { user: String, volume: u64, price: u64, }
+pub struct BuyRequest { pub user: String, pub volume: u64, pub price: u64, }
 
 impl BuyRequest {
     pub fn new(user: impl ToString, volume: u64, price: u64) -> Self {
@@ -69,30 +78,16 @@ struct AllocationQuery { username: String }
     // - impl AsRef<str> — caller can pass &str or String, no allocation, 
     //   just borrows
 
+
 //// ----- App State
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct AppState {
-    pub buy_seq_no: AtomicU64, // buy sequence number
-    pub supply: AtomicU64,                 // unallocated 
-        // this could be Atomic, using Mutex to show lock order / deadlock topic
-    pub allocations: DashMap<String, u64>,  // allocated 
-        // DashMap: lock-free concurrent HashMap which uses Mutex sharding
-    // Highest price top element. For same price bids, smaller seq on top
-    // (Reverse(price), seq)
-    bids: RwLock<BTreeMap<PriceSeqPair, Bid>>, // RwLock for educ. purposes
-        // Mutex when frequently modified/written
-        // RwLock when frequently read (reads 10 times more than writes)
-        //  Vec<Bid>
-            // buy : O(n log n) - sort bids vec
-            // sell: O(n) - iterate bids vec
-        // BTreeMap<PriceSeqPair, Bid>
-            // buy : O(log n) - insert
-            // sell: O(n) - retain will visit every elem
-    price_feed: Arc<PriceFeed>
+    // Either in memory or db postgres
+    pub storage: ActiveStorage,
 }
 
-type PriceSeqPair = (Reverse<u64>, u64);
+pub type PriceSeqPair = (Reverse<u64>, u64);
 
 #[cfg(test)]
 fn price_seq_pair(price: u64, seq: u64) -> (Reverse<u64>, u64) {
@@ -106,27 +101,6 @@ impl Bid {
     fn new(user: impl Into<String>, volume: u64, price: u64, seq: u64) -> Self { 
         Self { user: user.into(), volume, price, seq} 
     }
-}
-
-
-//// ----- Ordered Locks
-////
-//// To avoid deadlock, the lock order must be the same in these fns 
-//// 
-//// Also see: pre-commit hook ai check lock order for deadlock:
-//// src\tw_ai_pre_commit_hook.txt
-
-pub fn ordered_locks_buy(state: &AppState) -> 
-    RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>
-{
-    // let supply = state.supply.lock().unwrap();
-    state.bids.write().unwrap()
-}
-
-pub fn ordered_locks_sell(state: &AppState) -> 
-    RwLockWriteGuard<'_, BTreeMap<PriceSeqPair, Bid>>
-{
-    state.bids.write().unwrap()
 }
 
 
@@ -166,18 +140,7 @@ async fn buy(
     }
 
     //// buy starts here
-    let mut bids = ordered_locks_buy(&state);
-    // instead of:
-        // let mut supply = state.supply.lock().unwrap();
-        // let mut bids = state.bids.write().unwrap();
-
-    buy_impl(
-        &state.buy_seq_no,
-        &state.supply,
-        &state.allocations,
-        &mut bids,
-        req.0
-    );
+    state.storage.buy(req.0).await;
 
     HttpResponse::Ok().finish()
 }
@@ -211,8 +174,24 @@ pub fn buy_impl(
     buy_seq_no.fetch_add(1, Ordering::Relaxed);
     // println!("-- Buy sequence number: #{buy_seq_no:?}");
 
+    // CAS loop - Why are we using: 
+    // because atomic read-modify-write operations aren't truly atomic when 
+    // split into separate load-then-store steps. (so the loop re-reads and 
+    // retries if another thread changed the value between your read and your
+    // compare_exchange attempt.)
+    //
+    // CAS: compare_exchange is a single atomic hardware instruction 
+    // (like x86's CMPXCHG) that checks-and-swaps in one uninterruptible step, 
+    // so no other thread can sneak in between the read and the write. 
+    //
+    // In short, CAS tries to make this "separate load-then-store aka 
+    // read-then-write steps" in one atomic step 
+    // e.g. see line w/ "supply.compare_exchange(current, new_val, ...)" below
+    //
     let mut current = supply.load(Ordering::Acquire);
     loop { // CAS loop
+
+        // todo: move this section outside of loop ?
 
         //// 1. No supply, early return, store req into bids
         ////    - highest price bid at the end of bids vector
@@ -237,8 +216,11 @@ pub fn buy_impl(
         match supply.compare_exchange(
             current, new_val, Ordering::AcqRel, Ordering::Acquire
         ) {
-            Ok(supply_) => { // we won, value updated, 
-                            // supply_ is NOT new_value yet
+            Ok(supply_) => { // we (this thread) won, 
+                             // but supply_ is still OLD, unprocessed value
+                             // and it is just a value not var. 
+                             // Real var/Atomic "supply" will be updated 
+                             // with "new_value" after match ends.
                 if supply_ >= volume { // full fill 
                     let current_alloc = 
                         *allocations.get(&user).as_deref().unwrap_or(&0);
@@ -294,16 +276,7 @@ async fn sell(
         });
     }
 
-    let mut bids = ordered_locks_sell(&state);
-    // instead of
-        // let mut supply = state.supply.lock().unwrap();
-        // let mut bids = state.bids.write().unwrap();
-
-    sell_impl(
-        &state.supply,
-        &state.allocations,
-        &mut bids,
-        req.0);
+    state.storage.sell(req.0).await;
 
     HttpResponse::Ok().finish()
 }
@@ -326,6 +299,7 @@ pub fn sell_impl(
     //// process/allocate outstanding bids; full or partial fill
     bids.retain(|_, bid| {
         let mut current = supply.load(Ordering::Acquire);
+        // why CAS loop? see buy_impl()
         loop { // CAS loop
             if current == 0 { return true; } // cannot fill, keep bid
             let new_val = current.saturating_sub(bid.volume);
@@ -368,38 +342,26 @@ pub fn sell_impl(
 /*
 curl -s localhost:8080/allocation?username=u1
 */
-fn allocation_impl(
-    allocations: &DashMap<String, u64>, 
-    req: AllocationQuery
-) -> Result<u64> {
-    allocations.get(&req.username).as_deref()
-        .copied()  // Option<&u64> to Option<64>
-        // Option to Result
-        .ok_or_else(|| error::ErrorBadRequest("missing username\n"))
-
-    // or more readable:
-    //
-    // if let Some(alloc) = state.allocations.get(&req.username) {
-    //     Ok(*alloc)
-    // } else {
-    //     Err(error::ErrorBadRequest("missing username\n"))
-    // }
-}
-
 #[get("/allocation")]
 async fn allocation(
     state: web::Data<AppState>, 
     req: web::Query<AllocationQuery>
 ) -> Result<String> {
-    let res = allocation_impl(&state.allocations, req.0);
-    if let Ok(alloc) = res {
-        Ok(alloc.to_string())
-        // Debug:        
-        // Ok( format!("\n{}: {alloc:?}\n", &req.username) + 
-        //     &format!("\nstate: {state_:#?}\n ") )
-    } else {
-        Err(error::ErrorBadRequest("missing username\n"))
-    }
+    state.storage.allocation(&req.0.username).await.as_ref()
+        .map(ToString::to_string)
+        // Option to Result
+        .ok_or_else(|| error::ErrorBadRequest("username not found\n"))
+
+    // or more readable:
+    //
+    // if let Some(alloc) = state.storage.allocation(&req.0.username).await {
+    //     Ok(alloc.to_string())
+    //     // Debug:        
+    //     // Ok( format!("\n{}: {alloc:?}\n", &req.username) + 
+    //     //     &format!("\nstate: {state_:#?}\n ") )
+    // } else {
+    //     Err(error::ErrorBadRequest("missing username\n"))
+    // }
 }
 
 /// debug: show full app state
@@ -424,8 +386,10 @@ async fn buy_v2(
 
 /// See `src/tw_err_circuit_breaker.rs` for more
 #[get("/btc-price")]
-async fn btc_price(state: web::Data<AppState>) -> impl Responder {
-    match state.price_feed.get_btc_price().await {
+async fn btc_price(_state: web::Data<AppState>) -> impl Responder {
+    let _state = &_state.storage;
+    #[cfg(not(feature = "postgres"))]
+    match _state.price_feed.get_btc_price().await {
         Ok(price) => 
             HttpResponse::Ok().json(serde_json::json!({ "price": price })),
         // Fetch failed 3 times in a row
@@ -439,6 +403,12 @@ async fn btc_price(state: web::Data<AppState>) -> impl Responder {
             "error": e.as_str()
         })),
     }
+
+    #[cfg(feature = "postgres")]
+    HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "N/A",
+            "message": "price feed unavailable when postgres feature enabled"
+    }))
 }
 
 
@@ -467,6 +437,7 @@ pub mod tests_lib {
 
     // Helper fn
     pub fn buy_impl_for_test(state: &AppState, buy_req: BuyRequest) {
+        let state = &state.storage;
         let mut bids = ordered_locks_buy(state);
         buy_impl(
             &state.buy_seq_no,
@@ -479,6 +450,7 @@ pub mod tests_lib {
 
     // Helper fn
     pub fn sell_impl_for_test(state: &AppState, sell_req: SellRequest) {
+        let state = &state.storage;
         let mut bids = ordered_locks_sell(state);
         sell_impl(
             &state.supply,
@@ -587,7 +559,7 @@ mod http_tests {
         //// bid
         // (u2 still open for 50)
         assert_eq!(
-            state.bids.read().unwrap().values().next().unwrap().volume,
+            state.storage.bids.read().unwrap().values().next().unwrap().volume,
             50
         );
     }
@@ -656,7 +628,7 @@ mod concurrency_tests {
 
         for h in handles { h.await.unwrap() }
 
-        let bids = &state.bids.read().unwrap();
+        let bids = &state.storage.bids.read().unwrap();
 
         // 1. assert no same seq numbers
         let unique: HashSet<_> = bids.values().map(|b| b.seq).collect();
@@ -697,6 +669,7 @@ mod concurrency_tests {
 
         for h in handles { h.await.unwrap(); }
 
+        let state = &state.storage;
         let total_alloc: u64 = state.allocations.iter().map(|e| *e).sum();
         let total_supply = 50 * 10; // 500
         assert_eq!(total_alloc + state.supply.load(Ordering::Relaxed), total_supply);
@@ -721,6 +694,7 @@ mod concurrency_tests {
 
         sell_impl_for_test(&state, SellRequest { volume: 500 });
 
+        let state = &state.storage;
         let total_alloc: u64 = state.allocations.iter().map(|e| *e).sum();
         assert_eq!(total_alloc + state.supply.load(Ordering::Relaxed), 500);
     }
@@ -730,7 +704,7 @@ mod concurrency_tests {
     async fn buys_no_oversell() {
         let total_supply = 500;
         let state = web::Data::new(
-            AppState { 
+            InMemoryStorage { 
                 supply: AtomicU64::new(total_supply), ..Default::default() 
             }
         );

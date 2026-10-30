@@ -1,6 +1,4 @@
-#![allow(dead_code)]
 #![allow(unused_imports)]
-#![allow(unused_variables)]
 #![allow(non_camel_case_types)]
 #![allow(clippy::four_forward_slashes)]
 #![allow(clippy::empty_line_after_doc_comments)]
@@ -32,3 +30,12 @@ pub mod tw_error;
 pub mod tw_grpc;
 pub mod tw_main;
 pub mod tw_main_v0;
+pub mod tw_matching_engine_trait;
+pub mod tw_storage_in_memory;
+#[cfg(feature = "postgres" )]
+pub mod tw_storage_postgres;
+
+#[cfg(feature = "postgres")]
+use tw_storage_postgres::PostgresStorage as ActiveStorage;
+#[cfg(not(feature = "postgres"))]
+use tw_storage_in_memory::InMemoryStorage as ActiveStorage;
